@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title data-i18n-doc-title="optionsTitle">Blue Ringed Octopus — Options</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <header>
+    <h1 data-i18n="optionsHeading"></h1>
+    <p class="subtitle" data-i18n="optionsSubtitle"></p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2><span data-i18n="whitelistHeading"></span> <span id="wl-count" class="count">(0)</span></h2>
+      <p class="hint" data-i18n="whitelistHint"></p>
+      <ul id="whitelist" class="list"></ul>
+      <div class="add-row">
+        <input id="wl-input" type="text" data-i18n-placeholder="inputPlaceholderWhitelist" />
+        <button id="wl-add" type="button" class="btn-mini" data-i18n="btnAdd"></button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2><span data-i18n="blacklistHeading"></span> <span id="bl-count" class="count">(0)</span></h2>
+      <p class="hint" data-i18n="blacklistHint"></p>
+      <ul id="blacklist" class="list"></ul>
+      <div class="add-row">
+        <input id="bl-input" type="text" data-i18n-placeholder="inputPlaceholderBlacklist" />
+        <button id="bl-add" type="button" class="btn-mini" data-i18n="btnAdd"></button>
+      </div>
+      <details class="batch-import">
+        <summary data-i18n="batchImportSummary"></summary>
+        <p class="hint" data-i18n="batchImportHint"></p>
+        <textarea id="bl-batch-input" rows="6" placeholder="evil1.com&#10;evil2.xyz, phish.top&#10;# comment&#10;example.tk"></textarea>
+        <div class="batch-row">
+          <button id="bl-batch-add" type="button" class="btn-mini" data-i18n="batchAddButton"></button>
+          <span id="bl-batch-info" class="settings-info">—</span>
+        </div>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="thresholdHeading"></h2>
+      <p class="hint" data-i18n="thresholdHint"></p>
+      <div class="settings-row">
+        <input id="threshold-input" type="number" min="1" max="3650" step="1" />
+        <span class="settings-unit" data-i18n="thresholdUnit"></span>
+        <button id="threshold-save" type="button" class="btn-mini" data-i18n="btnSave"></button>
+      </div>
+      <div id="threshold-info" class="settings-info">—</div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="overlayHeading"></h2>
+      <p class="hint" data-i18n="overlayHint"></p>
+      <label class="toggle-row">
+        <input id="overlay-blacklist" type="checkbox" />
+        <span class="toggle-text">
+          <strong data-i18n="overlayBlacklistLabel"></strong>
+          <span class="toggle-sub" data-i18n="overlayBlacklistSub"></span>
+        </span>
+      </label>
+      <label class="toggle-row">
+        <input id="overlay-young" type="checkbox" />
+        <span class="toggle-text">
+          <strong data-i18n="overlayYoungLabel"></strong>
+          <span class="toggle-sub" data-i18n="overlayYoungSub"></span>
+        </span>
+      </label>
+      <label class="toggle-row">
+        <input id="overlay-high-risk-tld" type="checkbox" />
+        <span class="toggle-text">
+          <strong data-i18n="overlayHighRiskTldLabel"></strong>
+          <span class="toggle-sub" data-i18n="overlayHighRiskTldSub"></span>
+        </span>
+      </label>
+      <div id="overlay-info" class="settings-info">—</div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="cacheHeading"></h2>
+      <p class="hint" data-i18n="cacheHint"></p>
+      <button id="clear-cache" type="button" class="btn-secondary" data-i18n="clearCacheButton"></button>
+      <div id="cache-info" class="cache-info">—</div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="statsHeading"></h2>
+      <p class="hint" data-i18n="statsHint"></p>
+      <div id="stats-grid" class="stats-grid">
+        <div class="stat">
+          <div class="stat-num" id="stat-fetch">—</div>
+          <div class="stat-lbl" data-i18n="statRdapLabel"></div>
+        </div>
+        <div class="stat">
+          <div class="stat-num" id="stat-cache">—</div>
+          <div class="stat-lbl" data-i18n="statCacheLabel"></div>
+        </div>
+        <div class="stat">
+          <div class="stat-num" id="stat-list">—</div>
+          <div class="stat-lbl" data-i18n="statListLabel"></div>
+        </div>
+        <div class="stat stat-highlight">
+          <div class="stat-num" id="stat-saved">—</div>
+          <div class="stat-lbl" data-i18n="statSavedLabel"></div>
+        </div>
+      </div>
+      <div id="stats-hit-rate" class="settings-info">—</div>
+    </section>
+
+    <section class="card">
+      <h2><span data-i18n="highRiskTldHeading"></span> <span id="tld-count" class="count">(0)</span></h2>
+      <p class="hint" data-i18n="highRiskTldHint"></p>
+      <div class="add-row">
+        <input id="tld-input" type="text" data-i18n-placeholder="inputPlaceholderTld" />
+        <button id="tld-add" type="button" class="btn-mini" data-i18n="btnAdd"></button>
+      </div>
+      <div id="tld-list" class="tld-list tld-list-editable"></div>
+      <details id="tld-disabled-wrap" class="tld-disabled-section" hidden>
+        <summary><span data-i18n="disabledTldsSummary"></span> <span id="tld-disabled-count" class="count">(0)</span></summary>
+        <p class="hint" data-i18n="disabledTldsHint"></p>
+        <div id="tld-disabled-list" class="tld-list tld-list-disabled"></div>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2><span data-i18n="trustedHeading"></span> <span id="trusted-count" class="count">(0)</span></h2>
+      <p class="hint" data-i18n="trustedHint"></p>
+      <div id="trusted-list" class="tld-list tld-list-trusted"></div>
+    </section>
+
+    <section class="card">
+      <h2><span data-i18n="registrarHeading"></span> <span id="registrar-count" class="count">(0)</span></h2>
+      <p class="hint" data-i18n="registrarHint"></p>
+      <div id="registrar-list" class="tld-list tld-list-registrar"></div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="backupHeading"></h2>
+      <p class="hint" data-i18n="backupHint"></p>
+      <div class="settings-row">
+        <button id="backup-export" type="button" class="btn-mini" data-i18n="btnExport"></button>
+        <button id="backup-import" type="button" class="btn-mini" data-i18n="btnImport"></button>
+        <input id="backup-file" type="file" accept="application/json,.json" hidden />
+      </div>
+      <label class="toggle-row">
+        <input id="backup-include-settings" type="checkbox" />
+        <span class="toggle-text">
+          <strong data-i18n="backupImportSettings"></strong>
+        </span>
+      </label>
+      <div id="backup-info" class="settings-info">—</div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="languageHeading"></h2>
+      <p class="hint" data-i18n="languageHint"></p>
+      <div class="settings-row">
+        <select id="lang-select">
+          <option value="zh_TW" data-i18n="languageLabelZhTw"></option>
+          <option value="en" data-i18n="languageLabelEn"></option>
+        </select>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="privacyHeading"></h2>
+      <p class="hint" data-i18n="privacyIntro"></p>
+      <ul class="privacy-list">
+        <li><strong data-i18n="privacySentLabel"></strong> <span data-i18n="privacySentBody"></span></li>
+        <li><strong data-i18n="privacyWhereLabel"></strong> <span data-i18n="privacyWhereBody"></span></li>
+        <li><strong data-i18n="privacyMitigationLabel"></strong> <span data-i18n="privacyMitigationBody"></span></li>
+        <li><strong data-i18n="privacyGapsLabel"></strong> <span data-i18n="privacyGapsBody"></span></li>
+      </ul>
+      <p class="hint" data-i18n="privacyReadme"></p>
+    </section>
+  </main>
+
+  <footer>
+    <span class="version">v0.0.1</span>
+  </footer>
+
+  <script src="options.js" type="module"></script>
+</body>
+</html>

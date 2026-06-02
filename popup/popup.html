@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title data-i18n-doc-title="extName">Blue Ringed Octopus</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <h1>🐙 Blue Ringed Octopus</h1>
+    <p class="subtitle" data-i18n="popupSubtitle"></p>
+  </header>
+
+  <section class="status">
+    <div class="label" data-i18n="labelCurrentDomain"></div>
+    <div id="domain" class="value">—</div>
+
+    <div class="label" data-i18n="labelStatus"></div>
+    <div id="status" class="value" data-i18n="labelLoading"></div>
+
+    <div id="tags" class="tags" hidden></div>
+
+    <div id="details" class="details" hidden>
+      <div class="row">
+        <span class="row-label" data-i18n="labelRegistrationDate"></span>
+        <span id="reg-date" class="row-value">—</span>
+      </div>
+      <div class="row">
+        <span class="row-label" data-i18n="labelAge"></span>
+        <span id="age" class="row-value">—</span>
+      </div>
+      <div class="row" id="row-registrar" hidden>
+        <span class="row-label" data-i18n="labelRegistrar"></span>
+        <span id="registrar" class="row-value">—</span>
+      </div>
+      <div class="row" id="row-registrant-name" hidden>
+        <span class="row-label" data-i18n="labelRegistrant"></span>
+        <span id="registrant-name" class="row-value">—</span>
+      </div>
+      <div class="row" id="row-registrant-org" hidden>
+        <span class="row-label" data-i18n="labelOrganization"></span>
+        <span id="registrant-org" class="row-value">—</span>
+      </div>
+      <div class="row" id="row-registrant-email" hidden>
+        <span class="row-label" data-i18n="labelEmail"></span>
+        <span id="registrant-email" class="row-value">—</span>
+      </div>
+      <div class="row" id="row-redacted" hidden>
+        <span class="row-redacted" colspan="2" data-i18n="redactedNotice"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="actions">
+    <button id="btn-whitelist" type="button" class="btn-secondary" data-i18n="btnAddToWhitelist"></button>
+    <button id="btn-blacklist" type="button" class="btn-danger" data-i18n="btnAddToBlacklist"></button>
+  </section>
+
+  <section class="lookup">
+    <button id="lookup-toggle" type="button" class="lookup-toggle" aria-expanded="false" aria-controls="lookup-panel">
+      <span data-i18n="lookupToggle"></span>
+      <span class="lookup-chevron" aria-hidden="true">▾</span>
+    </button>
+    <div id="lookup-panel" class="lookup-panel" hidden>
+      <p class="lookup-hint" data-i18n="lookupHint"></p>
+      <div class="lookup-input-row">
+        <input id="lookup-input" type="text" autocomplete="off" autocapitalize="off"
+               spellcheck="false" data-i18n-placeholder="lookupPlaceholder"
+               data-i18n-aria-label="lookupToggle" />
+        <button id="lookup-btn" type="button" class="btn-secondary" data-i18n="lookupBtn"></button>
+      </div>
+      <div id="lookup-result" class="lookup-result" hidden></div>
+    </div>
+  </section>
+
+  <footer>
+    <a id="open-options" href="#" class="options-link" data-i18n="openOptionsLink"></a>
+    <span class="version">v0.0.1</span>
+  </footer>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

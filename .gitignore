@@ -1,0 +1,31 @@
+# Claude Code 暫存檔 / 內部 state / 本機開發設定（整個目錄都不公開）
+*.tmp.*
+.claude/
+
+# 個人 / 內部資料（請放在這裡避免誤上傳）
+*.private.*
+*.local.*
+anonymous*
+local/
+private/
+
+# 規格書 / 開發筆記（包含原始 prompt 與內部決策，不公開）
+BRO.md
+todo.md
+
+# 打包產物
+dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp

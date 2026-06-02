@@ -1,0 +1,334 @@
+/**
+ * Content Script：收到 SHOW_WARNING 時注入橫幅或全畫面蓋版。
+ *
+ * Payload 形態：
+ *   {
+ *     reason: "young" | "blacklist" | "high_risk_tld",
+ *     domain, registrationDate?, ageDays?, threshold?, tld?,
+ *     isHighRiskTld?, overlay?,
+ *     strings: { message, title, tags: [{cls,label}], dismissLabel, closeAriaLabel }
+ *   }
+ *
+ * 所有 user-visible 字串由 background.js 依使用者選擇的語言預先格式化,
+ * content script 只負責 render。
+ *
+ * 渲染分派（依 reason 與 overlay）：
+ *   - blacklist + overlay=true    → 蓋版 + 頂端橫幅（風險高，雙保險）
+ *   - young + overlay=true        → 蓋版 + 頂端橫幅（風險高，雙保險）
+ *   - high_risk_tld + overlay=true → 蓋版（提醒級，蓋版已足夠，不疊橫幅）
+ *   - 其餘                          → 頂端橫幅
+ *
+ * 顏色：young / blacklist 紅色；high_risk_tld 橘色（提醒級）。
+ *
+ * Dismiss 行為：
+ *   - high_risk_tld 按關閉後寫入 sessionStorage，本分頁同 domain 不再彈
+ *   - young / blacklist 不做 session dismiss（重新整理會再次出現，因為較嚴重）
+ *
+ * MV3 content script 不支援 ES module，這裡用 IIFE。
+ */
+
+(() => {
+  "use strict";
+
+  const BANNER_ID = "zeromonth-alert-banner";
+  const OVERLAY_ID = "zeromonth-alert-overlay";
+
+  const dismissKey = (reason, domain) => `bro-dismiss:${reason}:${domain}`;
+
+  function isDismissed(payload) {
+    if (!payload || !payload.domain || payload.reason !== "high_risk_tld") return false;
+    try {
+      return sessionStorage.getItem(dismissKey(payload.reason, payload.domain)) === "1";
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function markDismissed(payload) {
+    if (!payload || !payload.domain || payload.reason !== "high_risk_tld") return;
+    try {
+      sessionStorage.setItem(dismissKey(payload.reason, payload.domain), "1");
+    } catch (err) {
+      // 部分頁面（data: URL、嚴格 CSP）會擋 sessionStorage，吞掉
+    }
+  }
+
+  function stringsOf(payload) {
+    return (payload && payload.strings) || {
+      message: "", title: "", tags: [], dismissLabel: "", closeAriaLabel: ""
+    };
+  }
+
+  // 「為何被標記」逐項證據 + 建議怎麼做（Q3）。
+  // opts.expanded=true:蓋版空間大,預設展開;橫幅預設收合(toggle 點開)。
+  function buildEvidence(s, opts) {
+    if (!Array.isArray(s.evidence) || s.evidence.length === 0) return null;
+
+    const wrap = document.createElement("div");
+    wrap.className = "zm-evidence";
+
+    const list = document.createElement("div");
+    list.className = "zm-evidence-list";
+
+    for (const ev of s.evidence) {
+      const row = document.createElement("div");
+      row.className = "zm-evidence-row";
+      const l = document.createElement("span");
+      l.className = "zm-evidence-label";
+      l.textContent = ev.label;
+      const d = document.createElement("span");
+      d.className = "zm-evidence-detail";
+      d.textContent = ev.detail;
+      row.appendChild(l);
+      row.appendChild(d);
+      list.appendChild(row);
+    }
+
+    if (s.explain) {
+      const adv = document.createElement("div");
+      adv.className = "zm-evidence-advice";
+      const al = document.createElement("span");
+      al.className = "zm-evidence-advice-label";
+      al.textContent = s.whatToDoLabel || "";
+      const at = document.createElement("span");
+      at.className = "zm-evidence-advice-text";
+      at.textContent = (s.whatToDoLabel ? " " : "") + s.explain;
+      adv.appendChild(al);
+      adv.appendChild(at);
+      list.appendChild(adv);
+    }
+
+    const expanded = !!(opts && opts.expanded);
+    if (expanded) {
+      wrap.appendChild(list);
+      return wrap;
+    }
+
+    // 收合版：加 toggle 按鈕
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "zm-evidence-toggle";
+    toggle.setAttribute("aria-expanded", "false");
+    const tlabel = document.createElement("span");
+    tlabel.textContent = s.evidenceToggleLabel || "";
+    const chev = document.createElement("span");
+    chev.className = "zm-evidence-chevron";
+    chev.textContent = "▾";
+    toggle.appendChild(tlabel);
+    toggle.appendChild(chev);
+
+    list.hidden = true;
+    toggle.addEventListener("click", () => {
+      const open = list.hidden;
+      list.hidden = !open;
+      toggle.setAttribute("aria-expanded", String(open));
+      toggle.classList.toggle("is-open", open);
+    });
+
+    wrap.appendChild(toggle);
+    wrap.appendChild(list);
+    return wrap;
+  }
+
+  // 誤報一鍵「標記安全」（Q4）。黑名單不提供（避免把自己標記的惡意域洗白）。
+  // 點下 → 通知 background 加入白名單 → 移除告警。
+  function buildMarkSafeBtn(payload, s, onDone) {
+    if (!payload || !payload.domain) return null;
+    if (payload.reason === "blacklist") return null;
+    if (!s.markSafeLabel) return null;
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "zm-marksafe";
+    btn.textContent = s.markSafeLabel;
+    btn.addEventListener("click", () => {
+      try {
+        chrome.runtime.sendMessage(
+          { type: "MARK_FALSE_POSITIVE", domain: payload.domain },
+          () => { void chrome.runtime.lastError; }
+        );
+      } catch (err) {
+        // background 未回應也直接移除告警,避免使用者卡住
+      }
+      if (typeof onDone === "function") onDone();
+    });
+    return btn;
+  }
+
+  function injectOverlay(payload) {
+    if (document.getElementById(OVERLAY_ID)) return;
+    if (isDismissed(payload)) {
+      console.info("[BRO] overlay suppressed (session dismissed):", payload && payload.domain);
+      return;
+    }
+    if (!document.body) {
+      window.addEventListener("DOMContentLoaded", () => injectOverlay(payload), { once: true });
+      return;
+    }
+
+    const s = stringsOf(payload);
+
+    const overlay = document.createElement("div");
+    overlay.id = OVERLAY_ID;
+    overlay.setAttribute("role", "alertdialog");
+    overlay.setAttribute("aria-modal", "true");
+    if (payload && payload.reason === "high_risk_tld") {
+      overlay.classList.add("bro-overlay-warn");
+    }
+
+    const card = document.createElement("div");
+    card.className = "zm-overlay-card";
+
+    const icon = document.createElement("div");
+    icon.className = "zm-overlay-icon";
+    icon.textContent = payload && payload.reason === "high_risk_tld" ? "⚠" : "⚠️";
+
+    const title = document.createElement("div");
+    title.className = "zm-overlay-title";
+    title.textContent = s.title;
+
+    const text = document.createElement("div");
+    text.className = "zm-overlay-text";
+    text.textContent = s.message;
+
+    card.appendChild(icon);
+    card.appendChild(title);
+    card.appendChild(text);
+
+    if (Array.isArray(s.tags) && s.tags.length > 0) {
+      const tagRow = document.createElement("div");
+      tagRow.className = "zm-overlay-tags";
+      for (const tg of s.tags) {
+        const span = document.createElement("span");
+        span.className = tg.cls;
+        span.textContent = tg.label;
+        tagRow.appendChild(span);
+      }
+      card.appendChild(tagRow);
+    }
+
+    const evidence = buildEvidence(s, { expanded: true });
+    if (evidence) card.appendChild(evidence);
+
+    const actions = document.createElement("div");
+    actions.className = "zm-overlay-actions";
+    const safeBtn = buildMarkSafeBtn(payload, s, () => {
+      const el = document.getElementById(OVERLAY_ID);
+      if (el) el.remove();
+    });
+    if (safeBtn) {
+      safeBtn.classList.add("zm-overlay-marksafe");
+      actions.appendChild(safeBtn);
+    }
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "zm-overlay-close";
+    close.textContent = s.dismissLabel;
+    close.addEventListener("click", () => {
+      markDismissed(payload);
+      const el = document.getElementById(OVERLAY_ID);
+      if (el) el.remove();
+    });
+    actions.appendChild(close);
+    card.appendChild(actions);
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+  }
+
+  function injectBanner(payload) {
+    if (document.getElementById(BANNER_ID)) return;
+    if (isDismissed(payload)) {
+      console.info("[BRO] banner suppressed (session dismissed):", payload && payload.domain);
+      return;
+    }
+    if (!document.body) {
+      window.addEventListener("DOMContentLoaded", () => injectBanner(payload), { once: true });
+      return;
+    }
+
+    const s = stringsOf(payload);
+
+    const banner = document.createElement("div");
+    banner.id = BANNER_ID;
+    banner.setAttribute("role", "alert");
+    if (payload && payload.reason === "high_risk_tld") {
+      banner.classList.add("bro-banner-warn");
+    }
+
+    const mainRow = document.createElement("div");
+    mainRow.className = "zm-row zm-row-main";
+
+    const icon = document.createElement("span");
+    icon.className = "zm-icon";
+    icon.textContent = payload && payload.reason === "high_risk_tld" ? "⚠" : "⚠️";
+
+    const text = document.createElement("span");
+    text.className = "zm-text";
+    text.textContent = s.message;
+
+    const close = document.createElement("button");
+    close.className = "zm-close";
+    close.type = "button";
+    close.setAttribute("aria-label", s.closeAriaLabel);
+    close.textContent = "✕";
+    close.addEventListener("click", () => {
+      markDismissed(payload);
+      const el = document.getElementById(BANNER_ID);
+      if (el) el.remove();
+    });
+
+    mainRow.appendChild(icon);
+    mainRow.appendChild(text);
+    mainRow.appendChild(close);
+    banner.appendChild(mainRow);
+
+    // 副標籤列
+    if (Array.isArray(s.tags) && s.tags.length > 0) {
+      const tagRow = document.createElement("div");
+      tagRow.className = "zm-row zm-row-tags";
+      for (const tg of s.tags) {
+        const span = document.createElement("span");
+        span.className = tg.cls;
+        span.textContent = tg.label;
+        tagRow.appendChild(span);
+      }
+      banner.appendChild(tagRow);
+    }
+
+    const evidence = buildEvidence(s, { expanded: false });
+    if (evidence) banner.appendChild(evidence);
+
+    const safeBtn = buildMarkSafeBtn(payload, s, () => {
+      const el = document.getElementById(BANNER_ID);
+      if (el) el.remove();
+    });
+    if (safeBtn) {
+      const actRow = document.createElement("div");
+      actRow.className = "zm-row zm-row-actions";
+      actRow.appendChild(safeBtn);
+      banner.appendChild(actRow);
+    }
+
+    document.body.prepend(banner);
+  }
+
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (!msg || msg.type !== "SHOW_WARNING") return;
+    try {
+      const payload = msg.payload;
+      if (payload && payload.overlay) {
+        injectOverlay(payload);
+        // blacklist / young 屬高風險：蓋版被關掉後仍要有頂端橫幅持續提示。
+        // high_risk_tld 只是提醒級，蓋版已足夠，不疊橫幅以免吵。
+        if (payload.reason === "young" || payload.reason === "blacklist") {
+          injectBanner(payload);
+        }
+      } else {
+        injectBanner(payload);
+      }
+    } catch (err) {
+      console.warn("[BRO] inject warning failed:", err);
+    }
+  });
+})();

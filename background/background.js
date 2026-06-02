@@ -1,0 +1,587 @@
+/**
+ * Background Service Worker (MV3, ES module)。
+ *
+ * 檢查流程：
+ *   1. 監聽 tab 載入完成
+ *   2. shouldSkip / extractRootDomain 過濾
+ *   3. 黑名單命中 → 立即告警（reason: blacklist）
+ *   4. 白名單命中 → 略過
+ *   5. cache hit → 用 cache；miss → 呼叫 RDAP → setCache
+ *   6. ageDays < 30 → 告警（reason: young），順便標 highRiskTld
+ *   7. 其他狀態：放行（unsupported / error 都不告警）
+ *
+ * 注意：MV3 SW 會被休眠，所有狀態必須走 chrome.storage。
+ */
+
+import { extractRootDomain, shouldSkip } from "../lib/domain.js";
+import { getCache, setCache, clearAllCache, countCache } from "../lib/cache.js";
+import { fetchDomainAge } from "../lib/rdap.js";
+import {
+  getThreshold,
+  setThreshold,
+  THRESHOLD_META,
+  getOverlayBlacklist,
+  setOverlayBlacklist,
+  getOverlayYoung,
+  setOverlayYoung,
+  getOverlayHighRiskTld,
+  setOverlayHighRiskTld,
+} from "../lib/settings.js";
+import { incRdapFetch, incCacheHit, incSkipByList, getStats } from "../lib/stats.js";
+import {
+  isHighRiskTld,
+  isTrustedTld,
+  isWhitelisted,
+  isBlacklisted,
+  getWhitelist,
+  getBlacklist,
+  addToWhitelist,
+  removeFromWhitelist,
+  addToBlacklist,
+  removeFromBlacklist,
+  getHighRiskTldList,
+  getHighRiskTldListWithOrigin,
+  addUserHighRiskTld,
+  removeUserHighRiskTld,
+  getTrustedTldList,
+  isHighRiskRegistrar,
+  getHighRiskRegistrarList,
+} from "../lib/lists.js";
+import { initI18n, t, LOCALE_STORAGE_KEY } from "../lib/i18n.js";
+
+// === i18n bootstrap ===
+// MV3 SW 隨時可能被休眠;listener 必須同步註冊,但 handler 內再 await。
+let i18nReady = initI18n();
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes[LOCALE_STORAGE_KEY]) {
+    i18nReady = initI18n();
+  }
+});
+
+function formatBannerDate(iso) {
+  if (!iso) return t("unknownDate");
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return t("unknownDate");
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
+/**
+ * 為 content script 預先格式化所有 user-visible 字串。
+ * content.js 不直接讀 i18n,因為 MV3 content script 不支援 ES module,
+ * 且把 _locales 開到 web_accessible_resources 不必要地擴大 attack surface。
+ */
+function buildContentStrings(payload) {
+  let message = t("contentWarnGeneric");
+  let title = t("overlayTitleGeneric");
+
+  if (payload.reason === "blacklist") {
+    message = t("contentWarnBlacklist", payload.domain);
+    title = t("overlayTitleBlacklist");
+  } else if (payload.reason === "young") {
+    const regDate = formatBannerDate(payload.registrationDate);
+    const ageDays = typeof payload.ageDays === "number" ? payload.ageDays : "?";
+    const threshold = typeof payload.threshold === "number" ? payload.threshold : 30;
+    message = t("contentWarnYoung", threshold, regDate, ageDays);
+    title = t("overlayTitleYoung");
+  } else if (payload.reason === "high_risk_tld") {
+    const tld = payload.tld ? `.${payload.tld}` : t("tagHighRiskTld");
+    message = t("contentWarnHighRiskTld", payload.domain, tld);
+    title = t("overlayTitleHighRiskTld");
+  }
+
+  const tags = [];
+  if (payload.isHighRiskTld) {
+    tags.push({ cls: "zm-tag zm-tag-tld", label: t("tagHighRiskTld") });
+  }
+  if (payload.reason === "blacklist") {
+    tags.push({ cls: "zm-tag zm-tag-bl", label: t("tagBlacklist") });
+  }
+  if (payload.reason === "high_risk_tld" && payload.tld) {
+    tags.push({ cls: "zm-tag zm-tag-tld", label: `.${payload.tld}` });
+  }
+
+  // === 為何被標記:逐項證據 + 建議怎麼做（Q3）===
+  // 把目前已抓回卻被丟棄的 registrar / redaction 訊號落地成可展開明細。
+  const evidence = [];
+  const tldStr = payload.tld
+    ? `.${payload.tld}`
+    : (payload.domain ? `.${payload.domain.split(".").pop()}` : null);
+
+  if (payload.reason === "young") {
+    const regDate = formatBannerDate(payload.registrationDate);
+    const ageDays = typeof payload.ageDays === "number" ? payload.ageDays : "?";
+    evidence.push({ label: t("evidenceAgeLabel"), detail: t("evidenceAgeDetail", ageDays, regDate) });
+  }
+  if (payload.reason === "blacklist") {
+    evidence.push({ label: t("evidenceListLabel"), detail: t("evidenceBlacklistDetail") });
+  }
+  if (tldStr && (payload.reason === "high_risk_tld" || payload.isHighRiskTld)) {
+    evidence.push({ label: t("evidenceTldLabel"), detail: t("evidenceTldDetail", tldStr) });
+  }
+  if (payload.highRiskRegistrar && payload.registrarName) {
+    evidence.push({ label: t("evidenceRegistrarLabel"), detail: t("evidenceRegistrarDetail", payload.registrarName) });
+  }
+  if (payload.registrantRedacted) {
+    evidence.push({ label: t("evidenceRedactedLabel"), detail: t("evidenceRedactedDetail") });
+  }
+
+  let explain = t("explainGeneric");
+  if (payload.reason === "young") explain = t("explainYoung");
+  else if (payload.reason === "blacklist") explain = t("explainBlacklist");
+  else if (payload.reason === "high_risk_tld") explain = t("explainHighRiskTld");
+
+  return {
+    message,
+    title,
+    tags,
+    evidence,
+    explain,
+    evidenceToggleLabel: t("evidenceToggle"),
+    whatToDoLabel: t("evidenceWhatToDo"),
+    markSafeLabel: t("markSafeBtn"),
+    dismissLabel: t("overlayDismiss"),
+    closeAriaLabel: t("closeAriaLabel"),
+  };
+}
+
+// === Icon 載入 ===
+// 為什麼用 ImageData 而非 path：
+//   ES module SW 中，chrome.action.setIcon({path: "..."}) 的相對路徑 base 是
+//   SW 自己的位置（background/），不是 extension root → 內部 fetch 會 404。
+//   改成自己用 chrome.runtime.getURL() 取絕對 URL → fetch → 解碼為 ImageData，
+//   就避開了路徑解析問題（也順便把解碼結果 cache 起來）。
+const ICON_SIZES = [16, 48, 128];
+const IMAGE_DATA_CACHE = {
+  normal: null,
+  alert: null,
+  warn: null,
+  blacklist: null,
+  whitelist: null,
+};
+const ICON_STATES = Object.keys(IMAGE_DATA_CACHE);
+
+async function loadIconImageData(state /* "normal" | "alert" | "blacklist" | "whitelist" */) {
+  if (!ICON_STATES.includes(state)) state = "normal";
+  if (IMAGE_DATA_CACHE[state]) return IMAGE_DATA_CACHE[state];
+
+  const out = {};
+  for (const size of ICON_SIZES) {
+    const url = chrome.runtime.getURL(`icons/octopus-${state}-${size}.png`);
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`fetch ${url} → HTTP ${resp.status}`);
+    const blob = await resp.blob();
+    const bitmap = await createImageBitmap(blob);
+    const canvas = new OffscreenCanvas(size, size);
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(bitmap, 0, 0);
+    out[size] = ctx.getImageData(0, 0, size, size);
+  }
+  IMAGE_DATA_CACHE[state] = out;
+  return out;
+}
+
+function setTabIcon(tabId, state) {
+  loadIconImageData(state)
+    .then(imageData => chrome.action.setIcon({ tabId, imageData }))
+    .then(() => {
+      console.info(`[BRO] setIcon ok tab=${tabId} state=${state}`);
+    })
+    .catch(err => {
+      console.error(`[BRO] setIcon FAILED tab=${tabId} state=${state} err=`, err);
+    });
+}
+
+// === 工具列風險分數 badge（Q2）===
+// 在 5 態 icon 上疊一個 0–100 粗略風險分數 + 顏色階,不開 popup 就看得到
+// 這頁有多危險。pass / 安全狀態清空 badge。
+// 這是「粗分數」呈現層；待 H 的 verdict 聚合器落地後可改讀其精算分數。
+function badgeForVerdict(verdict) {
+  if (!verdict) return null;
+  if (verdict.classification === "blacklist") return { text: "100", bg: "#1f2937" };
+  if (verdict.classification === "young") {
+    const thr = typeof verdict.threshold === "number" && verdict.threshold > 0 ? verdict.threshold : 30;
+    const age = verdict.result && typeof verdict.result.ageDays === "number" ? verdict.result.ageDays : 0;
+    const frac = Math.max(0, Math.min(1, age / thr));
+    // 越年輕分數越高:剛註冊 ≈95,接近門檻 ≈70
+    return { text: String(Math.round(95 - frac * 25)), bg: "#c0392b" };
+  }
+  if (verdict.iconState === "warn") {
+    // 高風險 TLD / registrar（含 RDAP 拿不到但本地判定高風險 TLD）
+    return { text: verdict.highRiskTld ? "55" : "40", bg: "#d97706" };
+  }
+  return null; // ok / trusted / whitelist / unsupported / error / not_queried → 不顯示
+}
+
+function updateBadge(tabId, verdict) {
+  const b = badgeForVerdict(verdict);
+  try {
+    chrome.action.setBadgeText({ tabId, text: b ? b.text : "" });
+    if (b) {
+      chrome.action.setBadgeBackgroundColor({ tabId, color: b.bg });
+      // setBadgeTextColor 在較舊 Chrome 可能不存在
+      if (chrome.action.setBadgeTextColor) {
+        chrome.action.setBadgeTextColor({ tabId, color: "#ffffff" });
+      }
+    }
+  } catch (err) {
+    console.warn(`[BRO] setBadge failed tab=${tabId}:`, err);
+  }
+}
+
+/**
+ * 純判定函式：對單一網域跑完整檢查鏈，回傳結構化 verdict。
+ *
+ * 設計重點（Q1 共用地基）：
+ *   - 不碰 icon、不發 banner、不寫統計 —— 純粹「判定」。
+ *     icon / banner / 統計交給呼叫端（checkTab）依 verdict 決定。
+ *   - checkTab（被動,造訪時）與 CHECK_DOMAIN（主動,免造訪查詢）共用同一份邏輯,
+ *     確保兩條路徑判定一致。
+ *   - 短路順序與舊版 checkTab 完全相同：blacklist → whitelist → trustedTld → RDAP。
+ *
+ * @param {string} domain registrable domain（eTLD+1）
+ * @param {{allowFetch?: boolean}} opts allowFetch=false 時 cache miss 不打 RDAP（給「只看本地」用）
+ * @returns {Promise<object>} verdict
+ */
+async function evaluateDomain(domain, { allowFetch = true } = {}) {
+  const v = {
+    domain,
+    blacklisted: false,
+    whitelisted: false,
+    trustedTld: false,
+    highRiskTld: false,
+    highRiskRegistrar: false,
+    threshold: null,
+    result: null,
+    // 衍生分類：blacklist / whitelist / trusted / young / high_risk_tld /
+    //           high_risk_registrar / ok / unsupported / error / not_queried
+    classification: "ok",
+    iconState: "normal",          // checkTab 用：normal / alert / warn / blacklist / whitelist
+    warnReason: null,             // checkTab 用：要彈哪種橫幅（null=不彈）
+    cacheHit: false,
+    fetched: false,
+  };
+
+  // 黑名單優先（最強阻擋語意）
+  if (await isBlacklisted(domain)) {
+    v.blacklisted = true;
+    v.highRiskTld = await isHighRiskTld(domain);
+    v.classification = "blacklist";
+    v.iconState = "blacklist";
+    v.warnReason = "blacklist";
+    return v;
+  }
+
+  // 白名單：放行
+  if (await isWhitelisted(domain)) {
+    v.whitelisted = true;
+    v.classification = "whitelist";
+    v.iconState = "whitelist";
+    return v;
+  }
+
+  // 可信 TLD：視同自動白名單
+  if (isTrustedTld(domain)) {
+    v.trustedTld = true;
+    v.classification = "trusted";
+    v.iconState = "whitelist";
+    return v;
+  }
+
+  // 查詢註冊時間（cache → RDAP）
+  let result = await getCache(domain);
+  if (result) {
+    v.cacheHit = true;
+  } else if (allowFetch) {
+    result = await fetchDomainAge(domain);
+    v.fetched = true;
+    await setCache(domain, result);
+  }
+  v.result = result || null;
+
+  const registrarName = result && result.registrar ? result.registrar.name : null;
+  v.highRiskTld = await isHighRiskTld(domain);
+  v.highRiskRegistrar = isHighRiskRegistrar(registrarName);
+
+  if (!result || result.status !== "ok" || typeof result.ageDays !== "number") {
+    // RDAP 拿不到（unsupported / error / 未查）時,仍可用本地高風險 TLD 清單做判斷
+    v.classification = result ? result.status : "not_queried";
+    v.iconState = v.highRiskTld ? "warn" : "normal";
+    return v;
+  }
+
+  v.threshold = await getThreshold();
+  if (result.ageDays < v.threshold) {
+    v.classification = "young";
+    v.iconState = "alert";
+    v.warnReason = "young";
+  } else if (v.highRiskTld || v.highRiskRegistrar) {
+    // 註冊已久但 TLD / 註冊商屬高風險：橘色 warn icon
+    v.iconState = "warn";
+    v.classification = v.highRiskTld ? "high_risk_tld" : "high_risk_registrar";
+    // 只有「高風險 TLD」會彈橘色橫幅；高風險 registrar 不彈,避免誤殺。
+    if (v.highRiskTld) v.warnReason = "high_risk_tld";
+  } else {
+    v.classification = "ok";
+    v.iconState = "normal";
+  }
+  return v;
+}
+
+/**
+ * 對單一 tab 執行完整檢查流程。不會拋例外。
+ * 判定邏輯委派給 evaluateDomain；本函式只負責 icon / banner / 統計。
+ */
+async function checkTab(tabId, url) {
+  console.info(`[BRO] checkTab tab=${tabId} url=${url}`);
+
+  if (shouldSkip(url)) {
+    console.info(`[BRO]  → skip (shouldSkip)`);
+    setTabIcon(tabId, "normal");
+    updateBadge(tabId, null);
+    return;
+  }
+
+  const domain = extractRootDomain(url);
+  if (!domain) {
+    console.info(`[BRO]  → skip (cannot parse domain)`);
+    setTabIcon(tabId, "normal");
+    updateBadge(tabId, null);
+    return;
+  }
+  console.info(`[BRO]  → domain=${domain}`);
+
+  const verdict = await evaluateDomain(domain);
+
+  // 節流統計（與舊版 checkTab 語意一致）
+  if (verdict.blacklisted || verdict.whitelisted || verdict.trustedTld) {
+    incSkipByList();
+  } else if (verdict.cacheHit) {
+    incCacheHit();
+  } else if (verdict.fetched) {
+    incRdapFetch();
+  }
+
+  setTabIcon(tabId, verdict.iconState);
+  updateBadge(tabId, verdict);
+
+  if (verdict.warnReason === "blacklist") {
+    console.info(`[BRO]  → ALERT (blacklisted)`);
+    const overlay = await getOverlayBlacklist();
+    sendWarning(tabId, {
+      domain,
+      reason: "blacklist",
+      isHighRiskTld: verdict.highRiskTld,
+      overlay,
+    });
+  } else if (verdict.warnReason === "young") {
+    console.info(`[BRO]  → ALERT (young, ${verdict.result.ageDays} < ${verdict.threshold} days)`);
+    const overlay = await getOverlayYoung();
+    sendWarning(tabId, {
+      domain,
+      reason: "young",
+      registrationDate: verdict.result.registrationDate,
+      ageDays: verdict.result.ageDays,
+      threshold: verdict.threshold,
+      isHighRiskTld: verdict.highRiskTld,
+      registrarName: verdict.result.registrar ? verdict.result.registrar.name : null,
+      highRiskRegistrar: verdict.highRiskRegistrar,
+      registrantRedacted: verdict.result.status === "ok" && !verdict.result.registrant,
+      overlay,
+    });
+  } else if (verdict.warnReason === "high_risk_tld") {
+    console.info(`[BRO]  → orange warn (high-risk TLD)`);
+    const overlay = await getOverlayHighRiskTld();
+    sendWarning(tabId, {
+      domain,
+      reason: "high_risk_tld",
+      tld: domain.split(".").pop(),
+      ageDays: verdict.result.ageDays,
+      registrationDate: verdict.result.registrationDate,
+      registrarName: verdict.result.registrar ? verdict.result.registrar.name : null,
+      highRiskRegistrar: verdict.highRiskRegistrar,
+      registrantRedacted: verdict.result.status === "ok" && !verdict.result.registrant,
+      overlay,
+    });
+  } else {
+    console.info(`[BRO]  → pass/no-banner (classification=${verdict.classification}, icon=${verdict.iconState})`);
+  }
+}
+
+function sendWarning(tabId, payload) {
+  const strings = buildContentStrings(payload);
+  chrome.tabs.sendMessage(tabId, { type: "SHOW_WARNING", payload: { ...payload, strings } })
+    .catch(err => {
+      console.warn(`[BRO] sendMessage to tab ${tabId} failed:`, err.message || err);
+    });
+}
+
+// === 免造訪查詢台（Q1）===
+// 常見短網址 / 轉址服務（含台灣常見）。命中時提醒使用者：
+// BRO 只查得到短網址服務本身,看不到它最終會把人導去哪裡。
+// 這正是 LINE / 簡訊釣魚最常見的包裝方式,必須誠實標示而非給假安全感。
+const URL_SHORTENERS = new Set([
+  // 全球
+  "bit.ly", "tinyurl.com", "t.co", "goo.gl", "is.gd", "v.gd", "ow.ly",
+  "buff.ly", "cutt.ly", "rebrand.ly", "rb.gy", "shorturl.at", "tiny.cc",
+  "t.ly", "bl.ink", "soo.gd", "s.id", "dub.sh", "shorturl.com",
+  // 台灣常見
+  "reurl.cc", "pse.is", "psee.io", "lihi.cc", "lihi1.cc", "lihi2.cc",
+  "lihi3.cc", "lihi.io", "lihi.tv", "ppt.cc", "0rz.tw", "myppt.cc",
+  "risu.io", "tr.ee", "han.gl", "lurl.cc", "sl.ink",
+]);
+
+/**
+ * 免造訪查詢:輸入一個 URL / 網域,跑 evaluateDomain 回傳 verdict。
+ * 不改變任何 tab 的 icon / banner —— 純查詢。
+ *
+ * 重要定位:這是「風險訊號查詢」,不是「詐騙與否的判定」。
+ * 短網址無法看到最終目的地 → 以 isShortener 旗標讓 popup 明確警示。
+ *
+ * @param {string} rawInput 使用者貼上的字串（URL 或裸網域）
+ * @returns {Promise<object>}
+ */
+async function handleCheckDomain(rawInput) {
+  if (typeof rawInput !== "string" || !rawInput.trim()) {
+    return { ok: true, state: "empty" };
+  }
+  // 去掉前後空白與常見包覆字元（角括號 / 引號,常見於貼上）
+  let input = rawInput.trim().replace(/^[<"'\s]+|[>"'\s]+$/g, "");
+  // 沒有 scheme 就補 https:// 以利 URL 解析
+  const urlStr = /^[a-z][a-z0-9+.-]*:\/\//i.test(input) ? input : `https://${input}`;
+
+  let host;
+  try {
+    host = new URL(urlStr).hostname.toLowerCase();
+  } catch {
+    return { ok: true, state: "invalid" };
+  }
+
+  if (shouldSkip(urlStr)) {
+    return { ok: true, state: "skipped", host };
+  }
+
+  const domain = extractRootDomain(urlStr);
+  if (!domain) {
+    return { ok: true, state: "invalid_domain", host };
+  }
+
+  const isShortener = URL_SHORTENERS.has(domain);
+  const verdict = await evaluateDomain(domain, { allowFetch: true });
+
+  // 查詢台也會用到 RDAP,計入節流統計（與 checkTab 同口徑）
+  if (verdict.fetched) incRdapFetch();
+  else if (verdict.cacheHit) incCacheHit();
+  else if (verdict.blacklisted || verdict.whitelisted || verdict.trustedTld) incSkipByList();
+
+  return { ok: true, state: "checked", host, domain, isShortener, verdict };
+}
+
+/**
+ * 誤報一鍵「標記安全」(Q4):把網域加入白名單。
+ * 安全:只接受來自頁面 content script 的請求(sender.tab 存在),
+ * 避免被任意網頁 / 外部來源偽造把釣魚域洗白。
+ *
+ * @param {string} domain
+ * @param {chrome.runtime.MessageSender} sender
+ */
+async function handleMarkFalsePositive(domain, sender) {
+  if (!sender || !sender.tab) return { ok: false, reason: "bad sender" };
+  if (!domain || typeof domain !== "string") return { ok: false, reason: "empty" };
+  console.info(`[BRO] MARK_FALSE_POSITIVE → whitelist ${domain}`);
+  return addToWhitelist(domain);
+}
+
+// === Tab 載入完成監聽 ===
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status !== "complete") return;
+  if (!tab || !tab.url) return;
+  // 等 i18n 載入完成,確保 sendWarning 能拿到翻譯字串
+  i18nReady.then(() => checkTab(tabId, tab.url)).catch(err => {
+    console.warn("[BRO] checkTab failed:", err);
+  });
+});
+
+// === 訊息分派 ===
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || typeof msg.type !== "string") return false;
+
+  const handlers = {
+    GET_STATUS: () => handleGetStatus(msg.url),
+    CHECK_DOMAIN: () => handleCheckDomain(msg.input),
+    MARK_FALSE_POSITIVE: () => handleMarkFalsePositive(msg.domain, sender),
+    CLEAR_CACHE: () => clearAllCache().then(n => ({ ok: true, cleared: n })),
+    GET_CACHE_COUNT: () => countCache().then(n => ({ count: n })),
+
+    GET_WHITELIST: () => getWhitelist().then(list => ({ list })),
+    ADD_WHITELIST: () => addToWhitelist(msg.domain),
+    REMOVE_WHITELIST: () => removeFromWhitelist(msg.domain),
+
+    GET_BLACKLIST: () => getBlacklist().then(list => ({ list })),
+    ADD_BLACKLIST: () => addToBlacklist(msg.domain),
+    REMOVE_BLACKLIST: () => removeFromBlacklist(msg.domain),
+
+    GET_HIGH_RISK_TLDS: () => getHighRiskTldList().then(list => ({ list })),
+    GET_HIGH_RISK_TLDS_DETAIL: () => getHighRiskTldListWithOrigin(),
+    ADD_HIGH_RISK_TLD: () => addUserHighRiskTld(msg.tld),
+    REMOVE_HIGH_RISK_TLD: () => removeUserHighRiskTld(msg.tld),
+    GET_TRUSTED_TLDS: () => Promise.resolve({ list: getTrustedTldList() }),
+    GET_HIGH_RISK_REGISTRARS: () => Promise.resolve({ list: getHighRiskRegistrarList() }),
+
+    GET_THRESHOLD: () => getThreshold().then(v => ({ value: v, meta: THRESHOLD_META })),
+    SET_THRESHOLD: () => setThreshold(msg.days),
+
+    GET_OVERLAY_FLAGS: () => Promise.all([getOverlayBlacklist(), getOverlayYoung(), getOverlayHighRiskTld()])
+      .then(([blacklist, young, highRiskTld]) => ({ flags: { blacklist, young, highRiskTld } })),
+    SET_OVERLAY_BLACKLIST: () => setOverlayBlacklist(msg.value),
+    SET_OVERLAY_YOUNG: () => setOverlayYoung(msg.value),
+    SET_OVERLAY_HIGH_RISK_TLD: () => setOverlayHighRiskTld(msg.value),
+
+    GET_SESSION_STATS: () => getStats().then(s => ({ stats: s })),
+  };
+
+  const handler = handlers[msg.type];
+  if (!handler) return false;
+
+  handler().then(sendResponse).catch(err => {
+    console.warn(`[BRO] handler ${msg.type} failed:`, err);
+    sendResponse({ ok: false, error: String(err) });
+  });
+  return true; // async response
+});
+
+async function handleGetStatus(url) {
+  if (!url) return { state: "no_url" };
+  if (shouldSkip(url)) return { state: "skipped" };
+
+  const domain = extractRootDomain(url);
+  if (!domain) return { state: "invalid_domain" };
+
+  const [blacklisted, whitelisted, cached, threshold, highRiskTld] = await Promise.all([
+    isBlacklisted(domain),
+    isWhitelisted(domain),
+    getCache(domain),
+    getThreshold(),
+    isHighRiskTld(domain),
+  ]);
+
+  const registrarName = cached && cached.registrar ? cached.registrar.name : null;
+  return {
+    state: cached ? "cached" : "not_queried",
+    domain,
+    blacklisted,
+    whitelisted,
+    trustedTld: isTrustedTld(domain),
+    highRiskTld,
+    highRiskRegistrar: isHighRiskRegistrar(registrarName),
+    threshold,
+    result: cached || null,
+  };
+}
+
+chrome.runtime.onInstalled.addListener(details => {
+  console.info(`[BRO] installed/updated (${details.reason})`);
+});

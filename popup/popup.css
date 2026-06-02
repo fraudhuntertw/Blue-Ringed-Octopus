@@ -1,0 +1,349 @@
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 340px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC",
+    "Microsoft JhengHei", "Helvetica Neue", Arial, sans-serif;
+  font-size: 13px;
+  color: #1f2937;
+  background: #ffffff;
+}
+
+header {
+  padding: 14px 16px 10px;
+  background: linear-gradient(135deg, #c0392b 0%, #8b1a0e 100%);
+  color: #fff;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+header .subtitle {
+  margin: 2px 0 0;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+/* === Status === */
+.status {
+  padding: 14px 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.status .label {
+  font-size: 11px;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+
+.status .value {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  word-break: break-all;
+}
+
+.status .value:last-child {
+  margin-bottom: 0;
+}
+
+.value.is-warning { color: #c0392b; }
+.value.is-safe    { color: #16a34a; }
+.value.is-muted   { color: #6b7280; font-weight: 500; }
+.value.is-bl      { color: #1f2937; }
+
+.tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: -4px 0 10px;
+}
+
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: #e5e7eb;
+  color: #1f2937;
+}
+
+.tag-tld       { background: #fbbf24; color: #1f2937; }
+.tag-bl        { background: #1f2937; color: #fff; }
+.tag-wl        { background: #16a34a; color: #fff; }
+.tag-trusted   { background: #2563eb; color: #fff; }
+.tag-registrar { background: #f97316; color: #fff; }
+
+.details {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #e5e7eb;
+}
+
+.details .row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 2px 0;
+}
+
+.row-label {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.row-value {
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+  word-break: break-all;
+  max-width: 200px;
+}
+
+.row-value .registrar-warn {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 5px;
+  background: #f97316;
+  color: #fff;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.row-value a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.row-value a:hover {
+  text-decoration: underline;
+}
+
+.row-redacted {
+  display: block;
+  width: 100%;
+  padding: 4px 0;
+  font-size: 11px;
+  color: #6b7280;
+  font-style: italic;
+  text-align: center;
+}
+
+/* === Actions === */
+.actions {
+  padding: 10px 16px;
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.actions button {
+  flex: 1;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 12px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  border: 1px solid transparent;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  border-color: #6b7280;
+  background: #fff;
+  color: #374151;
+}
+.btn-secondary:hover:not(:disabled) {
+  background: #6b7280;
+  color: #fff;
+}
+
+.btn-danger {
+  border-color: #c0392b;
+  background: #fff;
+  color: #c0392b;
+}
+.btn-danger:hover:not(:disabled) {
+  background: #c0392b;
+  color: #fff;
+}
+
+/* === 免造訪查詢台（Q1）=== */
+.lookup {
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.lookup-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: #f9fafb;
+  border: none;
+  border-radius: 0;
+  color: #374151;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.lookup-toggle:hover {
+  background: #f3f4f6;
+}
+
+.lookup-chevron {
+  transition: transform 0.15s;
+  color: #9ca3af;
+}
+
+.lookup-toggle[aria-expanded="true"] .lookup-chevron {
+  transform: rotate(180deg);
+}
+
+.lookup-panel {
+  padding: 0 16px 12px;
+}
+
+.lookup-hint {
+  margin: 4px 0 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #6b7280;
+}
+
+.lookup-input-row {
+  display: flex;
+  gap: 6px;
+}
+
+.lookup-input-row input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  color: #1f2937;
+}
+
+.lookup-input-row input:focus {
+  outline: none;
+  border-color: #2563eb;
+}
+
+.lookup-input-row button {
+  flex: 0 0 auto;
+}
+
+.lookup-result {
+  margin-top: 10px;
+  padding: 10px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+}
+
+.lookup-result .lookup-msg {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.lookup-result .lookup-domain {
+  font-size: 13px;
+  font-weight: 700;
+  word-break: break-all;
+  margin-bottom: 4px;
+}
+
+.lookup-result .lookup-status {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.lookup-result .tags {
+  margin: 0 0 8px;
+}
+
+.lookup-result .details {
+  margin-top: 0;
+}
+
+.lookup-shortener {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #92400e;
+  font-weight: 600;
+}
+
+.lookup-disclaimer {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px dashed #e5e7eb;
+  font-size: 10px;
+  line-height: 1.5;
+  color: #9ca3af;
+}
+
+/* 查詢結果內的狀態色（不沿用 .value.is-* 因 class 結構不同） */
+.lookup-result .is-warning { color: #c0392b; }
+.lookup-result .is-safe    { color: #16a34a; }
+.lookup-result .is-muted   { color: #6b7280; font-weight: 500; }
+.lookup-result .is-bl      { color: #1f2937; }
+.lookup-result .is-warn    { color: #d97706; }
+
+.value.is-warn { color: #d97706; }
+
+/* === Footer === */
+footer {
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+footer .options-link {
+  font-size: 12px;
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+footer .options-link:hover {
+  text-decoration: underline;
+}
+
+footer .version {
+  font-size: 10px;
+  color: #9ca3af;
+}
