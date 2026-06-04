@@ -26,6 +26,10 @@ import {
   setOverlayYoung,
   getOverlayHighRiskTld,
   setOverlayHighRiskTld,
+  getLockBlacklist,
+  setLockBlacklist,
+  getLockYoung,
+  setLockYoung,
 } from "../lib/settings.js";
 import { incRdapFetch, incCacheHit, incSkipByList, getStats } from "../lib/stats.js";
 import {
@@ -85,7 +89,7 @@ function buildContentStrings(payload) {
     const regDate = formatBannerDate(payload.registrationDate);
     const ageDays = typeof payload.ageDays === "number" ? payload.ageDays : "?";
     const threshold = typeof payload.threshold === "number" ? payload.threshold : 30;
-    message = t("contentWarnYoung", threshold, regDate, ageDays);
+    message = t("contentWarnYoung", payload.domain, threshold, regDate, ageDays);
     title = t("overlayTitleYoung");
   } else if (payload.reason === "high_risk_tld") {
     const tld = payload.tld ? `.${payload.tld}` : t("tagHighRiskTld");
@@ -145,6 +149,7 @@ function buildContentStrings(payload) {
     markSafeLabel: t("markSafeBtn"),
     dismissLabel: t("overlayDismiss"),
     closeAriaLabel: t("closeAriaLabel"),
+    lockedNote: t("warningLockedNote"),
   };
 }
 
@@ -370,16 +375,17 @@ async function checkTab(tabId, url) {
 
   if (verdict.warnReason === "blacklist") {
     console.info(`[BRO]  → ALERT (blacklisted)`);
-    const overlay = await getOverlayBlacklist();
+    const [overlay, locked] = await Promise.all([getOverlayBlacklist(), getLockBlacklist()]);
     sendWarning(tabId, {
       domain,
       reason: "blacklist",
       isHighRiskTld: verdict.highRiskTld,
       overlay,
+      locked,
     });
   } else if (verdict.warnReason === "young") {
     console.info(`[BRO]  → ALERT (young, ${verdict.result.ageDays} < ${verdict.threshold} days)`);
-    const overlay = await getOverlayYoung();
+    const [overlay, locked] = await Promise.all([getOverlayYoung(), getLockYoung()]);
     sendWarning(tabId, {
       domain,
       reason: "young",
@@ -391,6 +397,7 @@ async function checkTab(tabId, url) {
       highRiskRegistrar: verdict.highRiskRegistrar,
       registrantRedacted: verdict.result.status === "ok" && !verdict.result.registrant,
       overlay,
+      locked,
     });
   } else if (verdict.warnReason === "high_risk_tld") {
     console.info(`[BRO]  → orange warn (high-risk TLD)`);
@@ -488,11 +495,58 @@ async function handleCheckDomain(rawInput) {
  * @param {string} domain
  * @param {chrome.runtime.MessageSender} sender
  */
+/**
+ * 判斷某網域目前是否「受鎖定」—— 鎖定守門的單一事實來源。
+ *
+ * 關鍵:判斷不可依賴 RDAP cache。cache 有 7 天 TTL、可被清除、SW 重啟後可能冷,
+ * 若沿用 allowFetch:false 會在 cache miss 時把 young 誤判成 not_queried 而 fail-open,
+ * 讓「曾被鎖定」的短註冊網域被洗白（審查 finding #1/#4）。
+ * 因此這裡在「確實有開鎖定」時允許補抓一次 RDAP（allowFetch:true）取得權威分類。
+ * 這條路徑是低頻、使用者主動觸發,補抓一次 RDAP 可接受。
+ *
+ * @param {string} domain
+ * @returns {Promise<null | "blacklist" | "young">} 命中鎖定的原因,未鎖定回 null
+ */
+async function lockedReasonFor(domain) {
+  const [lockBl, lockYoung] = await Promise.all([getLockBlacklist(), getLockYoung()]);
+  if (!lockBl && !lockYoung) return null;
+  const v = await evaluateDomain(domain, { allowFetch: true });
+  if (lockBl && v.classification === "blacklist") return "blacklist";
+  if (lockYoung && v.classification === "young") return "young";
+  return null;
+}
+
 async function handleMarkFalsePositive(domain, sender) {
   if (!sender || !sender.tab) return { ok: false, reason: "bad sender" };
   if (!domain || typeof domain !== "string") return { ok: false, reason: "empty" };
+  // 鎖定防護（縱深防禦）:即使頁面端按鈕已被移除,仍在此再擋一次,
+  // 拒絕任何「從頁面把已鎖定網域洗白」的請求。解除只能走選項頁。
+  const lockKind = await lockedReasonFor(domain);
+  if (lockKind) {
+    console.info(`[BRO] MARK_FALSE_POSITIVE blocked (${lockKind} locked): ${domain}`);
+    return { ok: false, reason: "locked", lockKind };
+  }
   console.info(`[BRO] MARK_FALSE_POSITIVE → whitelist ${domain}`);
   return addToWhitelist(domain);
+}
+
+/**
+ * popup 端的名單變更守門。
+ * popup 的「加入白名單 / 移出黑名單」會把訊息帶上 enforceLock:true,
+ * 這些「會削弱保護」的動作在鎖定時一律擋下（不依賴 cache,見 lockedReasonFor）。
+ * 選項頁用的是同名訊息但不帶 enforceLock —— 它是唯一授權的解除途徑,不受守門影響。
+ *
+ * @param {"ADD_WHITELIST"|"REMOVE_BLACKLIST"} type
+ * @param {string} domain
+ */
+async function handleGuardedMutation(type, domain) {
+  if (!domain || typeof domain !== "string") return { ok: false, reason: "empty" };
+  const lockKind = await lockedReasonFor(domain);
+  if (lockKind) {
+    console.info(`[BRO] ${type} blocked (${lockKind} locked): ${domain}`);
+    return { ok: false, reason: "locked", lockKind };
+  }
+  return type === "ADD_WHITELIST" ? addToWhitelist(domain) : removeFromBlacklist(domain);
 }
 
 // === Tab 載入完成監聽 ===
@@ -517,12 +571,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     GET_CACHE_COUNT: () => countCache().then(n => ({ count: n })),
 
     GET_WHITELIST: () => getWhitelist().then(list => ({ list })),
-    ADD_WHITELIST: () => addToWhitelist(msg.domain),
+    // enforceLock:true（來自 popup）→ 套用鎖定守門;選項頁不帶此旗標,為授權解除途徑。
+    ADD_WHITELIST: () => msg.enforceLock
+      ? handleGuardedMutation("ADD_WHITELIST", msg.domain)
+      : addToWhitelist(msg.domain),
     REMOVE_WHITELIST: () => removeFromWhitelist(msg.domain),
 
     GET_BLACKLIST: () => getBlacklist().then(list => ({ list })),
     ADD_BLACKLIST: () => addToBlacklist(msg.domain),
-    REMOVE_BLACKLIST: () => removeFromBlacklist(msg.domain),
+    REMOVE_BLACKLIST: () => msg.enforceLock
+      ? handleGuardedMutation("REMOVE_BLACKLIST", msg.domain)
+      : removeFromBlacklist(msg.domain),
 
     GET_HIGH_RISK_TLDS: () => getHighRiskTldList().then(list => ({ list })),
     GET_HIGH_RISK_TLDS_DETAIL: () => getHighRiskTldListWithOrigin(),
@@ -539,6 +598,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     SET_OVERLAY_BLACKLIST: () => setOverlayBlacklist(msg.value),
     SET_OVERLAY_YOUNG: () => setOverlayYoung(msg.value),
     SET_OVERLAY_HIGH_RISK_TLD: () => setOverlayHighRiskTld(msg.value),
+
+    GET_LOCK_FLAGS: () => Promise.all([getLockBlacklist(), getLockYoung()])
+      .then(([blacklist, young]) => ({ flags: { blacklist, young } })),
+    SET_LOCK_BLACKLIST: () => setLockBlacklist(msg.value),
+    SET_LOCK_YOUNG: () => setLockYoung(msg.value),
 
     GET_SESSION_STATS: () => getStats().then(s => ({ stats: s })),
   };
@@ -560,12 +624,14 @@ async function handleGetStatus(url) {
   const domain = extractRootDomain(url);
   if (!domain) return { state: "invalid_domain" };
 
-  const [blacklisted, whitelisted, cached, threshold, highRiskTld] = await Promise.all([
+  const [blacklisted, whitelisted, cached, threshold, highRiskTld, lockBlacklist, lockYoung] = await Promise.all([
     isBlacklisted(domain),
     isWhitelisted(domain),
     getCache(domain),
     getThreshold(),
     isHighRiskTld(domain),
+    getLockBlacklist(),
+    getLockYoung(),
   ]);
 
   const registrarName = cached && cached.registrar ? cached.registrar.name : null;
@@ -579,6 +645,9 @@ async function handleGetStatus(url) {
     highRiskRegistrar: isHighRiskRegistrar(registrarName),
     threshold,
     result: cached || null,
+    // 鎖定旗標:讓 popup 決定是否停用「加入白名單 / 移出黑名單」按鈕
+    lockBlacklist,
+    lockYoung,
   };
 }
 

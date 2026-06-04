@@ -166,6 +166,18 @@
   "overlayYoungShortLabel": { "message": "Below-threshold overlay" },
   "overlayHighRiskTldShortLabel": { "message": "High-risk TLD overlay" },
 
+  "lockHeading": { "message": "🔒 Locked alerts (cannot be dismissed)" },
+  "lockHint": { "message": "When on, these alerts can't be closed, skipped, or whitelisted from the web page or this extension's popup — they can only be changed from this options page (young domains also clear automatically once they pass the threshold). Designed so a family member can set it up and stop careless dismissals." },
+  "lockBlacklistLabel": { "message": "Lock blacklist alerts" },
+  "lockBlacklistSub": { "message": "Blacklist alerts can't be closed on the page, and the popup's \"Remove from blacklist\" button is disabled. They only clear by removing the domain from the blacklist here." },
+  "lockYoungLabel": { "message": "Lock newly-registered-domain alerts" },
+  "lockYoungSub": { "message": "Alerts for domains below the threshold can't be closed on the page, and the popup's \"Add to whitelist\" button is disabled. They clear by whitelisting the domain here, or once the domain is older than the threshold." },
+  "lockEnabled": { "message": "Lock enabled (alerts can't be dismissed on the page)" },
+  "lockDisabled": { "message": "Disabled (alerts can be dismissed on the page)" },
+  "lockFlagSaved": { "message": "Saved \"$1\" ($2) — applies on next visit" },
+  "lockBlacklistShortLabel": { "message": "Blacklist lock" },
+  "lockYoungShortLabel": { "message": "New-domain lock" },
+
   "cacheCurrent": { "message": "$1 entries cached" },
   "cacheClearing": { "message": "Clearing…" },
   "cacheCleared": { "message": "Cleared $1 entries" },
@@ -175,7 +187,7 @@
 
   "contentWarnGeneric": { "message": "Warning: risky domain detected." },
   "contentWarnBlacklist": { "message": "Warning: $1 is on your blacklist — marked as malicious!" },
-  "contentWarnYoung": { "message": "Warning: this domain is less than $1 days old (registered $2, $3 days ago) — very likely a recently set-up phishing/scam site. Real banks, payment, shopping and government sites rarely use such new domains. If it asks for your card number, online-banking login, a store payment code, or any payment, stop now." },
+  "contentWarnYoung": { "message": "Warning: $1 is less than $2 days old (registered $3, $4 days ago) — very likely a recently set-up phishing/scam site. Real banks, payment, shopping and government sites rarely use such new domains. If it asks for your card number, online-banking login, a store payment code, or any payment, stop now." },
   "contentWarnHighRiskTld": { "message": "Reminder: $1 uses $2, a TLD often registered in bulk and abused for scams. Before entering credentials, paying by card, or making a store payment, double-check this is the official site you meant to visit." },
 
   "overlayTitleYoung": { "message": "High risk: newly registered domain" },
@@ -185,6 +197,9 @@
   "overlayDismiss": { "message": "I understand, continue" },
 
   "closeAriaLabel": { "message": "Close warning" },
+  "warningLockedNote": { "message": "This alert is locked and can't be closed or skipped from this page. If you're sure it's safe, unlock it from the extension's options page (young domains also clear automatically once they pass the threshold)." },
+  "popupLockedNote": { "message": "This domain is locked — change the lists from the options page." },
+  "popupLockedNoteYoung": { "message": "This domain is locked — change the lists from the options page (young domains also clear once past the threshold)." },
 
   "lookupToggle": { "message": "🔎 Check another URL (without visiting)" },
   "lookupHint": { "message": "Paste a suspicious link from LINE / SMS to see its risk signals before clicking." },

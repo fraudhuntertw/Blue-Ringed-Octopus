@@ -59,6 +59,27 @@
     };
   }
 
+  // 鎖定告警：開啟後本頁無法關閉/略過/加入白名單,只能從選項頁解除
+  // （短註冊網域亦可等到超過門檻天數自動放行）。
+  function isLocked(payload) {
+    return !!(payload && payload.locked);
+  }
+
+  // 鎖定狀態下顯示的紅底提示，告訴使用者「為什麼沒有關閉鈕、要怎麼解除」。
+  function buildLockedNote(s) {
+    const note = document.createElement("div");
+    note.className = "zm-locked-note";
+    const icon = document.createElement("span");
+    icon.className = "zm-locked-icon";
+    icon.textContent = "🔒";
+    const text = document.createElement("span");
+    text.className = "zm-locked-text";
+    text.textContent = s.lockedNote || "";
+    note.appendChild(icon);
+    note.appendChild(text);
+    return note;
+  }
+
   // 「為何被標記」逐項證據 + 建議怎麼做（Q3）。
   // opts.expanded=true:蓋版空間大,預設展開;橫幅預設收合(toggle 點開)。
   function buildEvidence(s, opts) {
@@ -135,6 +156,8 @@
   function buildMarkSafeBtn(payload, s, onDone) {
     if (!payload || !payload.domain) return null;
     if (payload.reason === "blacklist") return null;
+    // 鎖定狀態：不提供頁面端「加入白名單」入口（只能從選項頁解除）
+    if (isLocked(payload)) return null;
     if (!s.markSafeLabel) return null;
 
     const btn = document.createElement("button");
@@ -193,6 +216,15 @@
 
     card.appendChild(icon);
     card.appendChild(title);
+    // 醒目顯示「判斷的主域名（eTLD+1，含 TLD）」—— 讓使用者一眼看到是哪個網域被標記。
+    // 所有告警類別（blacklist / young / high_risk_tld）皆顯示。
+    if (payload && payload.domain) {
+      const dom = document.createElement("div");
+      dom.className = "zm-overlay-domain";
+      dom.setAttribute("dir", "ltr"); // 網域一律左到右,避免 RTL 頁面把它倒置
+      dom.textContent = payload.domain;
+      card.appendChild(dom);
+    }
     card.appendChild(text);
 
     if (Array.isArray(s.tags) && s.tags.length > 0) {
@@ -210,27 +242,32 @@
     const evidence = buildEvidence(s, { expanded: true });
     if (evidence) card.appendChild(evidence);
 
-    const actions = document.createElement("div");
-    actions.className = "zm-overlay-actions";
-    const safeBtn = buildMarkSafeBtn(payload, s, () => {
-      const el = document.getElementById(OVERLAY_ID);
-      if (el) el.remove();
-    });
-    if (safeBtn) {
-      safeBtn.classList.add("zm-overlay-marksafe");
-      actions.appendChild(safeBtn);
+    if (isLocked(payload)) {
+      // 鎖定：不渲染任何關閉/略過/加入白名單按鈕,改放紅底鎖定提示。
+      card.appendChild(buildLockedNote(s));
+    } else {
+      const actions = document.createElement("div");
+      actions.className = "zm-overlay-actions";
+      const safeBtn = buildMarkSafeBtn(payload, s, () => {
+        const el = document.getElementById(OVERLAY_ID);
+        if (el) el.remove();
+      });
+      if (safeBtn) {
+        safeBtn.classList.add("zm-overlay-marksafe");
+        actions.appendChild(safeBtn);
+      }
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "zm-overlay-close";
+      close.textContent = s.dismissLabel;
+      close.addEventListener("click", () => {
+        markDismissed(payload);
+        const el = document.getElementById(OVERLAY_ID);
+        if (el) el.remove();
+      });
+      actions.appendChild(close);
+      card.appendChild(actions);
     }
-    const close = document.createElement("button");
-    close.type = "button";
-    close.className = "zm-overlay-close";
-    close.textContent = s.dismissLabel;
-    close.addEventListener("click", () => {
-      markDismissed(payload);
-      const el = document.getElementById(OVERLAY_ID);
-      if (el) el.remove();
-    });
-    actions.appendChild(close);
-    card.appendChild(actions);
 
     overlay.appendChild(card);
     document.body.appendChild(overlay);
@@ -255,6 +292,10 @@
     if (payload && payload.reason === "high_risk_tld") {
       banner.classList.add("bro-banner-warn");
     }
+    if (isLocked(payload)) {
+      // 無關閉鈕 → 收掉右側預留給 ✕ 的內距
+      banner.classList.add("bro-banner-locked");
+    }
 
     const mainRow = document.createElement("div");
     mainRow.className = "zm-row zm-row-main";
@@ -267,20 +308,22 @@
     text.className = "zm-text";
     text.textContent = s.message;
 
-    const close = document.createElement("button");
-    close.className = "zm-close";
-    close.type = "button";
-    close.setAttribute("aria-label", s.closeAriaLabel);
-    close.textContent = "✕";
-    close.addEventListener("click", () => {
-      markDismissed(payload);
-      const el = document.getElementById(BANNER_ID);
-      if (el) el.remove();
-    });
-
     mainRow.appendChild(icon);
     mainRow.appendChild(text);
-    mainRow.appendChild(close);
+    // 鎖定狀態：不渲染關閉鈕（✕），使用者無法從本頁略過此告警。
+    if (!isLocked(payload)) {
+      const close = document.createElement("button");
+      close.className = "zm-close";
+      close.type = "button";
+      close.setAttribute("aria-label", s.closeAriaLabel);
+      close.textContent = "✕";
+      close.addEventListener("click", () => {
+        markDismissed(payload);
+        const el = document.getElementById(BANNER_ID);
+        if (el) el.remove();
+      });
+      mainRow.appendChild(close);
+    }
     banner.appendChild(mainRow);
 
     // 副標籤列
@@ -299,15 +342,20 @@
     const evidence = buildEvidence(s, { expanded: false });
     if (evidence) banner.appendChild(evidence);
 
-    const safeBtn = buildMarkSafeBtn(payload, s, () => {
-      const el = document.getElementById(BANNER_ID);
-      if (el) el.remove();
-    });
-    if (safeBtn) {
-      const actRow = document.createElement("div");
-      actRow.className = "zm-row zm-row-actions";
-      actRow.appendChild(safeBtn);
-      banner.appendChild(actRow);
+    if (isLocked(payload)) {
+      // 鎖定：不提供「加入白名單」入口,改放紅底鎖定提示。
+      banner.appendChild(buildLockedNote(s));
+    } else {
+      const safeBtn = buildMarkSafeBtn(payload, s, () => {
+        const el = document.getElementById(BANNER_ID);
+        if (el) el.remove();
+      });
+      if (safeBtn) {
+        const actRow = document.createElement("div");
+        actRow.className = "zm-row zm-row-actions";
+        actRow.appendChild(safeBtn);
+        banner.appendChild(actRow);
+      }
     }
 
     document.body.prepend(banner);

@@ -166,6 +166,18 @@
   "overlayYoungShortLabel": { "message": "低於門檻蓋版" },
   "overlayHighRiskTldShortLabel": { "message": "高風險 TLD 蓋版" },
 
+  "lockHeading": { "message": "🔒 鎖定告警（無法忽略）" },
+  "lockHint": { "message": "開啟後，這類告警在網頁與 popup 都無法關閉、略過或加入白名單，只能回到本選項頁解除（短註冊網域亦會在超過門檻天數後自動放行）。適合後輩設定，防止長輩在告警頁面亂點忽略。" },
+  "lockBlacklistLabel": { "message": "鎖定黑名單告警" },
+  "lockBlacklistSub": { "message": "黑名單網域的告警無法在網頁關閉，popup 的「移出黑名單」按鈕也會停用。只能在本頁把網域移出黑名單才會解除。" },
+  "lockYoungLabel": { "message": "鎖定短註冊時間告警" },
+  "lockYoungSub": { "message": "低於門檻的新網域告警無法在網頁關閉，popup 的「加入白名單」按鈕也會停用。需在本頁把網域加入白名單，或等到該網域註冊滿門檻天數，才會解除。" },
+  "lockEnabled": { "message": "已啟用鎖定（網頁端無法關閉告警）" },
+  "lockDisabled": { "message": "未啟用（告警可在網頁關閉）" },
+  "lockFlagSaved": { "message": "已儲存「$1」（$2）— 下次造訪生效" },
+  "lockBlacklistShortLabel": { "message": "黑名單鎖定" },
+  "lockYoungShortLabel": { "message": "短註冊鎖定" },
+
   "cacheCurrent": { "message": "目前快取 $1 筆" },
   "cacheClearing": { "message": "清除中…" },
   "cacheCleared": { "message": "已清除 $1 筆快取" },
@@ -175,7 +187,7 @@
 
   "contentWarnGeneric": { "message": "警告：偵測到風險網域。" },
   "contentWarnBlacklist": { "message": "警告：此網域（$1）在您的黑名單中，已標記為惡意網站！" },
-  "contentWarnYoung": { "message": "警告：此網域註冊未滿 $1 天（註冊於 $2，已 $3 天），極可能是近期才架設的釣魚 / 詐騙網站。正牌銀行、金流、購物與政府網站幾乎不會用這麼新的網域 — 若它要你輸入信用卡號、網銀帳密、超商代碼或要求付款，請立即停止操作。" },
+  "contentWarnYoung": { "message": "警告：此網域 $1 註冊未滿 $2 天（註冊於 $3，已 $4 天），極可能是近期才架設的釣魚 / 詐騙網站。正牌銀行、金流、購物與政府網站幾乎不會用這麼新的網域 — 若它要你輸入信用卡號、網銀帳密、超商代碼或要求付款，請立即停止操作。" },
   "contentWarnHighRiskTld": { "message": "提醒：$1 使用 $2，這類網域常被詐騙集團大量註冊濫用。在輸入帳號密碼、刷卡或超商繳費前，務必再次確認這是不是你原本要去的官方網站。" },
 
   "overlayTitleYoung": { "message": "高風險警告：新註冊網域" },
@@ -185,6 +197,9 @@
   "overlayDismiss": { "message": "我已了解，繼續造訪" },
 
   "closeAriaLabel": { "message": "關閉警告" },
+  "warningLockedNote": { "message": "此告警已被鎖定，無法從本頁關閉或略過。如確定安全，請到擴充功能選項頁解除（短註冊網域也會在超過門檻天數後自動放行）。" },
+  "popupLockedNote": { "message": "此網域已被鎖定，只能到選項頁調整名單。" },
+  "popupLockedNoteYoung": { "message": "此網域已被鎖定，只能到選項頁調整名單（短註冊網域亦會在滿門檻天數後自動放行）。" },
 
   "lookupToggle": { "message": "🔎 查其他網址（免造訪)" },
   "lookupHint": { "message": "把可疑的 LINE / 簡訊連結貼進來,先看風險訊號,再決定要不要點。" },

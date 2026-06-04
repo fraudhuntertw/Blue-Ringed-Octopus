@@ -146,12 +146,27 @@ header .subtitle {
 .actions {
   padding: 10px 16px;
   display: flex;
+  flex-direction: column;
   gap: 8px;
   border-bottom: 1px solid #e5e7eb;
 }
 
+.actions-row {
+  display: flex;
+  gap: 8px;
+}
+
 .actions button {
   flex: 1;
+}
+
+/* 鎖定提示：紅字,提醒此網域受鎖定、需至選項頁解除 */
+.lock-note {
+  margin: 0;
+  color: #c0392b;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
 }
 
 button {

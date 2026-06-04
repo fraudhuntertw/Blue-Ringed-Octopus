@@ -417,6 +417,46 @@ $("overlay-high-risk-tld").addEventListener("change", () => {
   saveOverlayFlag("overlay-high-risk-tld", "SET_OVERLAY_HIGH_RISK_TLD", "overlayHighRiskTldShortLabel");
 });
 
+// === 鎖定告警（無法忽略）開關 ===
+
+function setLockInfo(text, status /* "saved" | "error" | null */) {
+  const el = $("lock-info");
+  el.textContent = text;
+  el.className = "settings-info";
+  if (status === "saved") el.classList.add("is-saved");
+  if (status === "error") el.classList.add("is-error");
+}
+
+async function loadLockToggles() {
+  const resp = await sendMessage({ type: "GET_LOCK_FLAGS" });
+  const flags = (resp && resp.flags) || { blacklist: false, young: false };
+  $("lock-blacklist").checked = !!flags.blacklist;
+  $("lock-young").checked = !!flags.young;
+  setLockInfo(
+    flags.blacklist || flags.young ? t("lockEnabled") : t("lockDisabled"),
+    null
+  );
+}
+
+async function saveLockFlag(checkboxId, msgType, labelKey) {
+  const value = $(checkboxId).checked;
+  const resp = await sendMessage({ type: msgType, value });
+  if (resp && resp.ok) {
+    setLockInfo(t("lockFlagSaved", t(labelKey), t(value ? "labelOn" : "labelOff")), "saved");
+  } else {
+    setLockInfo(t("saveFailed", (resp && resp.error) || t("unknownError")), "error");
+    // 回滾畫面狀態
+    $(checkboxId).checked = !value;
+  }
+}
+
+$("lock-blacklist").addEventListener("change", () => {
+  saveLockFlag("lock-blacklist", "SET_LOCK_BLACKLIST", "lockBlacklistShortLabel");
+});
+$("lock-young").addEventListener("change", () => {
+  saveLockFlag("lock-young", "SET_LOCK_YOUNG", "lockYoungShortLabel");
+});
+
 // === 快取 ===
 
 async function refreshCacheCount() {
@@ -475,12 +515,13 @@ async function doExport() {
   const btn = $("backup-export");
   btn.disabled = true;
   try {
-    const [wl, bl, tldDetail, threshold, overlay] = await Promise.all([
+    const [wl, bl, tldDetail, threshold, overlay, lock] = await Promise.all([
       sendMessage({ type: "GET_WHITELIST" }),
       sendMessage({ type: "GET_BLACKLIST" }),
       sendMessage({ type: "GET_HIGH_RISK_TLDS_DETAIL" }),
       sendMessage({ type: "GET_THRESHOLD" }),
       sendMessage({ type: "GET_OVERLAY_FLAGS" }),
+      sendMessage({ type: "GET_LOCK_FLAGS" }),
     ]);
     const whitelist = (wl && wl.list) || [];
     const blacklist = (bl && bl.list) || [];
@@ -500,6 +541,8 @@ async function doExport() {
       overlayBlacklist: !!(overlay && overlay.flags && overlay.flags.blacklist),
       overlayYoung: !!(overlay && overlay.flags && overlay.flags.young),
       overlayHighRiskTld: !!(overlay && overlay.flags && overlay.flags.highRiskTld),
+      lockBlacklist: !!(lock && lock.flags && lock.flags.blacklist),
+      lockYoung: !!(lock && lock.flags && lock.flags.young),
       ui_locale: getCurrentLocale(),
     };
 
@@ -575,6 +618,12 @@ async function applyImport(parsed, includeSettings) {
     if (typeof parsed.overlayHighRiskTld === "boolean") {
       await sendMessage({ type: "SET_OVERLAY_HIGH_RISK_TLD", value: parsed.overlayHighRiskTld });
     }
+    if (typeof parsed.lockBlacklist === "boolean") {
+      await sendMessage({ type: "SET_LOCK_BLACKLIST", value: parsed.lockBlacklist });
+    }
+    if (typeof parsed.lockYoung === "boolean") {
+      await sendMessage({ type: "SET_LOCK_YOUNG", value: parsed.lockYoung });
+    }
     if (typeof parsed.ui_locale === "string" && SUPPORTED_LOCALES.includes(parsed.ui_locale)) {
       await setPreferredLocale(parsed.ui_locale);
     }
@@ -613,6 +662,8 @@ async function doImport(file) {
       typeof parsed.overlayBlacklist === "boolean" ||
       typeof parsed.overlayYoung === "boolean" ||
       typeof parsed.overlayHighRiskTld === "boolean" ||
+      typeof parsed.lockBlacklist === "boolean" ||
+      typeof parsed.lockYoung === "boolean" ||
       typeof parsed.ui_locale === "string"
     );
 
@@ -629,6 +680,7 @@ async function doImport(file) {
     if (includeSettings) {
       await loadThreshold();
       await loadOverlayToggles();
+      await loadLockToggles();
       // 語言可能變了,簡單重整頁面即可套用
       if (typeof parsed.ui_locale === "string" && parsed.ui_locale !== getCurrentLocale()) {
         location.reload();
@@ -665,4 +717,5 @@ $("backup-file").addEventListener("change", (e) => {
   loadHighRiskRegistrars();
   loadThreshold();
   loadOverlayToggles();
+  loadLockToggles();
 })();

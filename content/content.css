@@ -136,6 +136,53 @@
   background: rgba(0, 0, 0, 0.15) !important;
 }
 
+/* === 鎖定告警：無關閉鈕時的提示 === */
+/* 無 ✕ 時收掉右側為它預留的內距 */
+#zeromonth-alert-banner.bro-banner-locked {
+  padding-right: 16px !important;
+}
+
+/* 橫幅 + 蓋版共用的鎖定提示盒：白底深紅字,在紅色容器上格外醒目 */
+#zeromonth-alert-banner .zm-locked-note,
+#zeromonth-alert-overlay .zm-locked-note {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 8px !important;
+  background: #ffffff !important;
+  color: #8b1a0e !important;
+  border-radius: 6px !important;
+  font-weight: 700 !important;
+  text-shadow: none !important;
+}
+
+#zeromonth-alert-banner .zm-locked-note {
+  margin-top: 8px !important;
+  margin-left: 28px !important; /* 對齊主文字左緣 */
+  padding: 7px 10px !important;
+  font-size: 12.5px !important;
+  line-height: 1.5 !important;
+}
+
+#zeromonth-alert-overlay .zm-locked-note {
+  margin-top: 18px !important;
+  padding: 10px 14px !important;
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+}
+
+#zeromonth-alert-banner .zm-locked-icon,
+#zeromonth-alert-overlay .zm-locked-icon {
+  flex: 0 0 auto !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+}
+
+#zeromonth-alert-banner .zm-locked-text,
+#zeromonth-alert-overlay .zm-locked-text {
+  flex: 1 1 auto !important;
+  word-break: break-word !important;
+}
+
 /* === 為何被標記:證據列 + 建議（Q3）=== */
 #zeromonth-alert-banner .zm-evidence {
   margin-top: 8px !important;
@@ -362,6 +409,29 @@
   line-height: 1.3 !important;
   margin-bottom: 10px !important;
   letter-spacing: 0.01em !important;
+}
+
+/* 醒目主域名（eTLD+1）：等寬字、白底深色框,在紅/橘卡上都一眼可見 */
+#zeromonth-alert-overlay .zm-overlay-domain {
+  display: block !important;
+  margin: 0 0 12px !important;
+  padding: 8px 12px !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  color: #8b1a0e !important;
+  border-radius: 8px !important;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace !important;
+  font-size: 17px !important;
+  font-weight: 800 !important;
+  line-height: 1.35 !important;
+  letter-spacing: 0.01em !important;
+  word-break: break-all !important;
+  text-shadow: none !important;
+  unicode-bidi: isolate !important;
+}
+
+#zeromonth-alert-overlay.bro-overlay-warn .zm-overlay-domain {
+  color: #7c2d12 !important;
 }
 
 #zeromonth-alert-overlay .zm-overlay-text {

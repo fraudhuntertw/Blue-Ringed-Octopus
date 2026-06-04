@@ -431,6 +431,38 @@ button:disabled {
   line-height: 1.4;
 }
 
+/* === 鎖定告警卡（紅字警示） === */
+/* 整張卡用紅色左框 + 淡紅底,凸顯這是「開啟後使用者無法自行關閉」的強制選項。 */
+.card-lock {
+  border-left: 4px solid #c0392b;
+  background: #fff5f4;
+}
+
+.card-lock h2 {
+  color: #c0392b;
+}
+
+.hint-lock {
+  color: #c0392b;
+  font-weight: 600;
+}
+
+.toggle-row-lock .toggle-text strong {
+  color: #c0392b;
+}
+
+.toggle-row-lock .toggle-text .toggle-sub {
+  color: #a02d22;
+}
+
+.toggle-row-lock + .toggle-row-lock {
+  border-top-color: #f0c4c0;
+}
+
+.toggle-row-lock input[type="checkbox"] {
+  accent-color: #c0392b;
+}
+
 /* === Cache === */
 .cache-info {
   margin-top: 8px;

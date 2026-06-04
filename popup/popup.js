@@ -253,6 +253,20 @@ async function renderStatus() {
   updateActionButtons(resp);
 }
 
+// 顯示/隱藏鎖定提示（紅字）。kind 決定文案：young 額外說明「滿門檻會自動放行」。
+function showLockNote(kind /* "blacklist" | "young" */) {
+  const lockNote = $("lock-note");
+  if (!lockNote) return;
+  const key = kind === "young" ? "popupLockedNoteYoung" : "popupLockedNote";
+  lockNote.textContent = `🔒 ${t(key)}`;
+  lockNote.hidden = false;
+}
+
+function hideLockNote() {
+  const lockNote = $("lock-note");
+  if (lockNote) lockNote.hidden = true;
+}
+
 function updateActionButtons(resp) {
   const wlBtn = $("btn-whitelist");
   const blBtn = $("btn-blacklist");
@@ -262,6 +276,7 @@ function updateActionButtons(resp) {
     blBtn.disabled = true;
     wlBtn.textContent = t("btnAddToWhitelist");
     blBtn.textContent = t("btnAddToBlacklist");
+    hideLockNote();
     return;
   }
 
@@ -270,21 +285,65 @@ function updateActionButtons(resp) {
 
   wlBtn.textContent = t(resp.whitelisted ? "btnRemoveFromWhitelist" : "btnAddToWhitelist");
   blBtn.textContent = t(resp.blacklisted ? "btnRemoveFromBlacklist" : "btnAddToBlacklist");
+
+  // === 鎖定：停用會「削弱保護」的按鈕,只能從選項頁解除 ===
+  // 注意:這只是「即時可見」的 UX 停用,實際寫入仍由 background 守門（不依賴 cache）,
+  // 故 cache 冷導致按鈕誤啟用時,點下去仍會被擋並補顯示鎖定提示。
+  const threshold = typeof resp.threshold === "number" ? resp.threshold : 30;
+  const isYoung = !!(resp.result && resp.result.status === "ok"
+    && typeof resp.result.ageDays === "number" && resp.result.ageDays < threshold);
+  // 黑名單鎖定 → 停用「移出黑名單」;「加入白名單」對黑名單無效（黑名單優先於白名單）,
+  //   一併停用,避免誤導使用者並防止殘留白名單日後靜默放行。
+  const blLocked = !!(resp.blacklisted && resp.lockBlacklist);
+  // 短註冊鎖定 → 不能把尚未白名單的短註冊網域「加入白名單」；
+  //   已白名單則按鈕是「移出白名單」(會加嚴,不削弱),不鎖。
+  const wlLocked = !!(isYoung && resp.lockYoung && !resp.whitelisted);
+
+  if (blLocked) {
+    blBtn.disabled = true;
+    wlBtn.disabled = true;
+  }
+  if (wlLocked) wlBtn.disabled = true;
+
+  if (blLocked || wlLocked) showLockNote(blLocked ? "blacklist" : "young");
+  else hideLockNote();
 }
 
 // === Event wiring ===
 
+// 被 background 鎖定守門擋下時的共用處理：顯示鎖定提示並停用該按鈕。
+function handleLockedResponse(resp, btnId) {
+  if (resp && resp.ok === false && resp.reason === "locked") {
+    showLockNote(resp.lockKind === "young" ? "young" : "blacklist");
+    $(btnId).disabled = true;
+    return true;
+  }
+  return false;
+}
+
 $("btn-whitelist").addEventListener("click", async () => {
   if (!currentDomain || !currentStatus) return;
-  const type = currentStatus.whitelisted ? "REMOVE_WHITELIST" : "ADD_WHITELIST";
-  await sendMessage({ type, domain: currentDomain });
+  if (currentStatus.whitelisted) {
+    // 移出白名單 = 加嚴保護,不受鎖定限制
+    await sendMessage({ type: "REMOVE_WHITELIST", domain: currentDomain });
+  } else {
+    // 加入白名單 = 削弱保護,帶 enforceLock 交由 background 守門
+    const resp = await sendMessage({ type: "ADD_WHITELIST", domain: currentDomain, enforceLock: true });
+    if (handleLockedResponse(resp, "btn-whitelist")) return;
+  }
   await renderStatus();
 });
 
 $("btn-blacklist").addEventListener("click", async () => {
   if (!currentDomain || !currentStatus) return;
-  const type = currentStatus.blacklisted ? "REMOVE_BLACKLIST" : "ADD_BLACKLIST";
-  await sendMessage({ type, domain: currentDomain });
+  if (currentStatus.blacklisted) {
+    // 移出黑名單 = 削弱保護,帶 enforceLock 交由 background 守門
+    const resp = await sendMessage({ type: "REMOVE_BLACKLIST", domain: currentDomain, enforceLock: true });
+    if (handleLockedResponse(resp, "btn-blacklist")) return;
+  } else {
+    // 加入黑名單 = 加嚴保護,不受鎖定限制
+    await sendMessage({ type: "ADD_BLACKLIST", domain: currentDomain });
+  }
   await renderStatus();
 });
 
