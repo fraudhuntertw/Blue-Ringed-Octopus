@@ -244,8 +244,11 @@ function badgeForVerdict(verdict) {
     // 越年輕分數越高:剛註冊 ≈95,接近門檻 ≈70
     return { text: String(Math.round(95 - frac * 25)), bg: "#c0392b" };
   }
-  if (verdict.warnReason === "odd_name" || verdict.classification === "odd_name") {
+  if (verdict.classification === "odd_name") {
     // 奇怪域名:提醒級、純結構啟發式,風險分數刻意低於高風險 TLD / registrar。
+    // 只在「純 odd_name 分類」時給 30；若同時命中高風險 registrar,classification
+    // 仍是 high_risk_registrar（warnReason 才是 odd_name）,會落到下方 warn 分支拿
+    // 較高的 40,避免「多開一個可疑訊號反而把分數調降」的矛盾。
     return { text: "30", bg: "#d97706" };
   }
   if (verdict.iconState === "warn") {
