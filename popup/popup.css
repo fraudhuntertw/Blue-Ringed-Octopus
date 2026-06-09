@@ -84,6 +84,7 @@ header .subtitle {
 .tag-wl        { background: #16a34a; color: #fff; }
 .tag-trusted   { background: #2563eb; color: #fff; }
 .tag-registrar { background: #f97316; color: #fff; }
+.tag-odd       { background: #ea580c; color: #fff; }
 
 .details {
   margin-top: 8px;

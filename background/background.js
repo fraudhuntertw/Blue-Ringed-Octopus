@@ -13,7 +13,7 @@
  * 注意：MV3 SW 會被休眠，所有狀態必須走 chrome.storage。
  */
 
-import { extractRootDomain, shouldSkip } from "../lib/domain.js";
+import { extractRootDomain, shouldSkip, inspectDomainName } from "../lib/domain.js";
 import { getCache, setCache, clearAllCache, countCache } from "../lib/cache.js";
 import { fetchDomainAge } from "../lib/rdap.js";
 import {
@@ -30,6 +30,8 @@ import {
   setLockBlacklist,
   getLockYoung,
   setLockYoung,
+  getDetectOddName,
+  setDetectOddName,
 } from "../lib/settings.js";
 import { incRdapFetch, incCacheHit, incSkipByList, getStats } from "../lib/stats.js";
 import {
@@ -74,6 +76,21 @@ function formatBannerDate(iso) {
 }
 
 /**
+ * 把奇怪域名命中原因（"long" / "hyphen"）轉成在地化片語,
+ * 例如「過長（超過 10 字）」、「含連字號 -」,多項以分隔符接起。
+ * @param {string[]} reasons
+ * @returns {string}
+ */
+function oddNameReasonText(reasons) {
+  const list = Array.isArray(reasons) ? reasons : [];
+  const parts = list
+    .map(r => (r === "long" ? t("oddReasonLong") : r === "hyphen" ? t("oddReasonHyphen") : null))
+    .filter(Boolean);
+  if (parts.length === 0) return t("oddReasonGeneric");
+  return parts.join(t("oddReasonSep"));
+}
+
+/**
  * 為 content script 預先格式化所有 user-visible 字串。
  * content.js 不直接讀 i18n,因為 MV3 content script 不支援 ES module,
  * 且把 _locales 開到 web_accessible_resources 不必要地擴大 attack surface。
@@ -95,6 +112,9 @@ function buildContentStrings(payload) {
     const tld = payload.tld ? `.${payload.tld}` : t("tagHighRiskTld");
     message = t("contentWarnHighRiskTld", payload.domain, tld);
     title = t("overlayTitleHighRiskTld");
+  } else if (payload.reason === "odd_name") {
+    message = t("contentWarnOddName", payload.domain, oddNameReasonText(payload.oddNameReasons));
+    title = t("overlayTitleOddName");
   }
 
   const tags = [];
@@ -106,6 +126,9 @@ function buildContentStrings(payload) {
   }
   if (payload.reason === "high_risk_tld" && payload.tld) {
     tags.push({ cls: "zm-tag zm-tag-tld", label: `.${payload.tld}` });
+  }
+  if (payload.reason === "odd_name") {
+    tags.push({ cls: "zm-tag zm-tag-tld", label: t("tagOddName") });
   }
 
   // === 為何被標記:逐項證據 + 建議怎麼做（Q3）===
@@ -132,11 +155,18 @@ function buildContentStrings(payload) {
   if (payload.registrantRedacted) {
     evidence.push({ label: t("evidenceRedactedLabel"), detail: t("evidenceRedactedDetail") });
   }
+  if (payload.reason === "odd_name" && payload.oddNameLabel) {
+    evidence.push({
+      label: t("evidenceOddNameLabel"),
+      detail: t("evidenceOddNameDetail", payload.oddNameLabel, oddNameReasonText(payload.oddNameReasons)),
+    });
+  }
 
   let explain = t("explainGeneric");
   if (payload.reason === "young") explain = t("explainYoung");
   else if (payload.reason === "blacklist") explain = t("explainBlacklist");
   else if (payload.reason === "high_risk_tld") explain = t("explainHighRiskTld");
+  else if (payload.reason === "odd_name") explain = t("explainOddName");
 
   return {
     message,
@@ -214,6 +244,10 @@ function badgeForVerdict(verdict) {
     // 越年輕分數越高:剛註冊 ≈95,接近門檻 ≈70
     return { text: String(Math.round(95 - frac * 25)), bg: "#c0392b" };
   }
+  if (verdict.warnReason === "odd_name" || verdict.classification === "odd_name") {
+    // 奇怪域名:提醒級、純結構啟發式,風險分數刻意低於高風險 TLD / registrar。
+    return { text: "30", bg: "#d97706" };
+  }
   if (verdict.iconState === "warn") {
     // 高風險 TLD / registrar（含 RDAP 拿不到但本地判定高風險 TLD）
     return { text: verdict.highRiskTld ? "55" : "40", bg: "#d97706" };
@@ -238,6 +272,31 @@ function updateBadge(tabId, verdict) {
 }
 
 /**
+ * 奇怪域名 fallback：最低優先、提醒級的頂端橫幅。
+ *
+ * 只在「沒有任何更高優先告警（blacklist / young / high_risk_tld）」時才升級成橫幅
+ * —— 同一頁只有一條橫幅,高優先者優先。v.oddName 已在 evaluateDomain 內套過開關
+ * 閘控與黑/白/可信排除,故這裡只需檢查 warnReason 是否已被占用。
+ *
+ * 注意：即使這裡不升級成橫幅,v.oddName 仍保持為 true,讓 popup / lookup 能以
+ * 標籤額外呈現「奇怪域名」訊號（標籤可疊加,不受單一橫幅名額限制）。
+ *
+ * @param {object} v verdict（就地修改後回傳）
+ * @returns {object}
+ */
+function maybeFlagOddName(v) {
+  if (v.warnReason || !v.oddName) return v;
+  v.warnReason = "odd_name";
+  if (v.iconState === "normal") v.iconState = "warn";
+  // 沿用既有「非告警」分類時改標 odd_name；high_risk_registrar 等保留,
+  // 讓 popup / badge 仍依其分類呈現,只是另外多了一條奇怪域名橫幅。
+  if (["ok", "not_queried", "unsupported", "error"].includes(v.classification)) {
+    v.classification = "odd_name";
+  }
+  return v;
+}
+
+/**
  * 純判定函式：對單一網域跑完整檢查鏈，回傳結構化 verdict。
  *
  * 設計重點（Q1 共用地基）：
@@ -259,10 +318,15 @@ async function evaluateDomain(domain, { allowFetch = true } = {}) {
     trustedTld: false,
     highRiskTld: false,
     highRiskRegistrar: false,
+    // 奇怪域名（偵測奇怪域名功能）：主域名過長 / 含連字號。
+    // 已套用開關閘控 + 排除白名單/可信/黑名單,故 true 代表「該顯示提醒」。
+    oddName: false,
+    oddNameReasons: [],           // ⊆ {"long","hyphen"}
+    oddNameLabel: null,           // 命中的主域名 label（不含 TLD）
     threshold: null,
     result: null,
     // 衍生分類：blacklist / whitelist / trusted / young / high_risk_tld /
-    //           high_risk_registrar / ok / unsupported / error / not_queried
+    //           high_risk_registrar / odd_name / ok / unsupported / error / not_queried
     classification: "ok",
     iconState: "normal",          // checkTab 用：normal / alert / warn / blacklist / whitelist
     warnReason: null,             // checkTab 用：要彈哪種橫幅（null=不彈）
@@ -296,6 +360,19 @@ async function evaluateDomain(domain, { allowFetch = true } = {}) {
     return v;
   }
 
+  // 奇怪域名訊號（開關閘控,純結構判斷,與 RDAP 無關）。
+  // 在此計算為「顯示用旗標」：到這裡已排除黑/白名單與可信 TLD,只要開關開且命中
+  // 規則即標記,供 popup / lookup 以標籤呈現。是否升級成「頂端橫幅」另由下方
+  // maybeFlagOddName 決定（僅在沒有更高優先告警時）。
+  if (await getDetectOddName()) {
+    const insp = inspectDomainName(domain);
+    if (insp.odd) {
+      v.oddName = true;
+      v.oddNameReasons = insp.reasons;
+      v.oddNameLabel = insp.label;
+    }
+  }
+
   // 查詢註冊時間（cache → RDAP）
   let result = await getCache(domain);
   if (result) {
@@ -315,7 +392,7 @@ async function evaluateDomain(domain, { allowFetch = true } = {}) {
     // RDAP 拿不到（unsupported / error / 未查）時,仍可用本地高風險 TLD 清單做判斷
     v.classification = result ? result.status : "not_queried";
     v.iconState = v.highRiskTld ? "warn" : "normal";
-    return v;
+    return maybeFlagOddName(v);
   }
 
   v.threshold = await getThreshold();
@@ -333,7 +410,7 @@ async function evaluateDomain(domain, { allowFetch = true } = {}) {
     v.classification = "ok";
     v.iconState = "normal";
   }
-  return v;
+  return maybeFlagOddName(v);
 }
 
 /**
@@ -412,6 +489,16 @@ async function checkTab(tabId, url) {
       highRiskRegistrar: verdict.highRiskRegistrar,
       registrantRedacted: verdict.result.status === "ok" && !verdict.result.registrant,
       overlay,
+    });
+  } else if (verdict.warnReason === "odd_name") {
+    console.info(`[BRO]  → odd-name warn (${verdict.oddNameReasons.join(",")})`);
+    // 奇怪域名：提醒級、永遠頂端橫幅、無蓋版（不傳 overlay）。
+    sendWarning(tabId, {
+      domain,
+      reason: "odd_name",
+      oddNameReasons: verdict.oddNameReasons,
+      oddNameLabel: verdict.oddNameLabel,
+      isHighRiskTld: verdict.highRiskTld,
     });
   } else {
     console.info(`[BRO]  → pass/no-banner (classification=${verdict.classification}, icon=${verdict.iconState})`);
@@ -604,6 +691,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     SET_LOCK_BLACKLIST: () => setLockBlacklist(msg.value),
     SET_LOCK_YOUNG: () => setLockYoung(msg.value),
 
+    GET_DETECT_ODD_NAME: () => getDetectOddName().then(value => ({ value })),
+    SET_DETECT_ODD_NAME: () => setDetectOddName(msg.value),
+
     GET_SESSION_STATS: () => getStats().then(s => ({ stats: s })),
   };
 
@@ -624,7 +714,7 @@ async function handleGetStatus(url) {
   const domain = extractRootDomain(url);
   if (!domain) return { state: "invalid_domain" };
 
-  const [blacklisted, whitelisted, cached, threshold, highRiskTld, lockBlacklist, lockYoung] = await Promise.all([
+  const [blacklisted, whitelisted, cached, threshold, highRiskTld, lockBlacklist, lockYoung, detectOddName] = await Promise.all([
     isBlacklisted(domain),
     isWhitelisted(domain),
     getCache(domain),
@@ -632,9 +722,14 @@ async function handleGetStatus(url) {
     isHighRiskTld(domain),
     getLockBlacklist(),
     getLockYoung(),
+    getDetectOddName(),
   ]);
 
   const registrarName = cached && cached.registrar ? cached.registrar.name : null;
+  // 奇怪域名（開關開啟時才評估）：黑名單 / 白名單命中時不顯示此提醒（已有更明確狀態）。
+  const oddInsp = (detectOddName && !blacklisted && !whitelisted && !isTrustedTld(domain))
+    ? inspectDomainName(domain)
+    : { odd: false, label: null, reasons: [] };
   return {
     state: cached ? "cached" : "not_queried",
     domain,
@@ -643,6 +738,9 @@ async function handleGetStatus(url) {
     trustedTld: isTrustedTld(domain),
     highRiskTld,
     highRiskRegistrar: isHighRiskRegistrar(registrarName),
+    oddName: oddInsp.odd,
+    oddNameReasons: oddInsp.reasons,
+    oddNameLabel: oddInsp.label,
     threshold,
     result: cached || null,
     // 鎖定旗標:讓 popup 決定是否停用「加入白名單 / 移出黑名單」按鈕

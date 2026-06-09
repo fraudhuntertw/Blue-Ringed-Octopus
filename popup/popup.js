@@ -201,6 +201,7 @@ async function renderStatus() {
   if (resp.trustedTld)        tags.push({ cls: "tag-trusted",   label: t("tagTrusted") });
   if (resp.highRiskTld)       tags.push({ cls: "tag-tld",       label: t("tagHighRiskTld") });
   if (resp.highRiskRegistrar) tags.push({ cls: "tag-registrar", label: t("tagHighRiskRegistrar") });
+  if (resp.oddName)           tags.push({ cls: "tag-odd",       label: t("tagOddName") });
   if (resp.blacklisted)       tags.push({ cls: "tag-bl",        label: t("tagBlacklist") });
   if (resp.whitelisted)       tags.push({ cls: "tag-wl",        label: t("tagWhitelist") });
   renderTags(tags);
@@ -373,6 +374,8 @@ function lookupStatusOf(verdict) {
       return { text: t("lookupStatusHighRiskTld"), cls: "is-warn" };
     case "high_risk_registrar":
       return { text: t("lookupStatusHighRiskRegistrar"), cls: "is-warn" };
+    case "odd_name":
+      return { text: t("lookupStatusOddName"), cls: "is-warn" };
     case "ok":
       return { text: t("statusOk", threshold), cls: "is-safe" };
     case "unsupported":
@@ -389,6 +392,7 @@ function lookupTags(verdict) {
   if (verdict.trustedTld)        tags.push({ cls: "tag-trusted",   label: t("tagTrusted") });
   if (verdict.highRiskTld)       tags.push({ cls: "tag-tld",       label: t("tagHighRiskTld") });
   if (verdict.highRiskRegistrar) tags.push({ cls: "tag-registrar", label: t("tagHighRiskRegistrar") });
+  if (verdict.oddName)           tags.push({ cls: "tag-odd",       label: t("tagOddName") });
   if (verdict.blacklisted)       tags.push({ cls: "tag-bl",        label: t("tagBlacklist") });
   if (verdict.whitelisted)       tags.push({ cls: "tag-wl",        label: t("tagWhitelist") });
   return tags;

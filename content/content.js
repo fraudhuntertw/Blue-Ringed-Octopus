@@ -33,10 +33,15 @@
   const BANNER_ID = "zeromonth-alert-banner";
   const OVERLAY_ID = "zeromonth-alert-overlay";
 
+  // 提醒級（橘色）告警：橘色樣式 + 關閉後本分頁同 domain 記憶不再彈。
+  // young / blacklist 屬告警級（紅色）,重新整理會再次出現,不在此列。
+  const REMINDER_REASONS = new Set(["high_risk_tld", "odd_name"]);
+  const isReminder = (payload) => !!(payload && REMINDER_REASONS.has(payload.reason));
+
   const dismissKey = (reason, domain) => `bro-dismiss:${reason}:${domain}`;
 
   function isDismissed(payload) {
-    if (!payload || !payload.domain || payload.reason !== "high_risk_tld") return false;
+    if (!payload || !payload.domain || !isReminder(payload)) return false;
     try {
       return sessionStorage.getItem(dismissKey(payload.reason, payload.domain)) === "1";
     } catch (err) {
@@ -45,7 +50,7 @@
   }
 
   function markDismissed(payload) {
-    if (!payload || !payload.domain || payload.reason !== "high_risk_tld") return;
+    if (!payload || !payload.domain || !isReminder(payload)) return;
     try {
       sessionStorage.setItem(dismissKey(payload.reason, payload.domain), "1");
     } catch (err) {
@@ -289,7 +294,7 @@
     const banner = document.createElement("div");
     banner.id = BANNER_ID;
     banner.setAttribute("role", "alert");
-    if (payload && payload.reason === "high_risk_tld") {
+    if (isReminder(payload)) {
       banner.classList.add("bro-banner-warn");
     }
     if (isLocked(payload)) {
@@ -302,7 +307,7 @@
 
     const icon = document.createElement("span");
     icon.className = "zm-icon";
-    icon.textContent = payload && payload.reason === "high_risk_tld" ? "⚠" : "⚠️";
+    icon.textContent = isReminder(payload) ? "⚠" : "⚠️";
 
     const text = document.createElement("span");
     text.className = "zm-text";

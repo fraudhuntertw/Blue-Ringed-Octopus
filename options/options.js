@@ -457,6 +457,36 @@ $("lock-young").addEventListener("change", () => {
   saveLockFlag("lock-young", "SET_LOCK_YOUNG", "lockYoungShortLabel");
 });
 
+// === 偵測奇怪域名（提醒級橫幅,預設關）===
+
+function setOddNameInfo(text, status /* "saved" | "error" | null */) {
+  const el = $("odd-name-info");
+  el.textContent = text;
+  el.className = "settings-info";
+  if (status === "saved") el.classList.add("is-saved");
+  if (status === "error") el.classList.add("is-error");
+}
+
+async function loadOddNameToggle() {
+  const resp = await sendMessage({ type: "GET_DETECT_ODD_NAME" });
+  const on = !!(resp && resp.value);
+  $("odd-name-detect").checked = on;
+  setOddNameInfo(on ? t("oddNameEnabled") : t("oddNameDisabled"), null);
+}
+
+async function saveOddNameFlag() {
+  const value = $("odd-name-detect").checked;
+  const resp = await sendMessage({ type: "SET_DETECT_ODD_NAME", value });
+  if (resp && resp.ok) {
+    setOddNameInfo(t("oddNameFlagSaved", t(value ? "labelOn" : "labelOff")), "saved");
+  } else {
+    setOddNameInfo(t("saveFailed", (resp && resp.error) || t("unknownError")), "error");
+    $("odd-name-detect").checked = !value; // 回滾畫面狀態
+  }
+}
+
+$("odd-name-detect").addEventListener("change", saveOddNameFlag);
+
 // === 快取 ===
 
 async function refreshCacheCount() {
@@ -515,13 +545,14 @@ async function doExport() {
   const btn = $("backup-export");
   btn.disabled = true;
   try {
-    const [wl, bl, tldDetail, threshold, overlay, lock] = await Promise.all([
+    const [wl, bl, tldDetail, threshold, overlay, lock, oddName] = await Promise.all([
       sendMessage({ type: "GET_WHITELIST" }),
       sendMessage({ type: "GET_BLACKLIST" }),
       sendMessage({ type: "GET_HIGH_RISK_TLDS_DETAIL" }),
       sendMessage({ type: "GET_THRESHOLD" }),
       sendMessage({ type: "GET_OVERLAY_FLAGS" }),
       sendMessage({ type: "GET_LOCK_FLAGS" }),
+      sendMessage({ type: "GET_DETECT_ODD_NAME" }),
     ]);
     const whitelist = (wl && wl.list) || [];
     const blacklist = (bl && bl.list) || [];
@@ -543,6 +574,7 @@ async function doExport() {
       overlayHighRiskTld: !!(overlay && overlay.flags && overlay.flags.highRiskTld),
       lockBlacklist: !!(lock && lock.flags && lock.flags.blacklist),
       lockYoung: !!(lock && lock.flags && lock.flags.young),
+      detectOddName: !!(oddName && oddName.value),
       ui_locale: getCurrentLocale(),
     };
 
@@ -624,6 +656,9 @@ async function applyImport(parsed, includeSettings) {
     if (typeof parsed.lockYoung === "boolean") {
       await sendMessage({ type: "SET_LOCK_YOUNG", value: parsed.lockYoung });
     }
+    if (typeof parsed.detectOddName === "boolean") {
+      await sendMessage({ type: "SET_DETECT_ODD_NAME", value: parsed.detectOddName });
+    }
     if (typeof parsed.ui_locale === "string" && SUPPORTED_LOCALES.includes(parsed.ui_locale)) {
       await setPreferredLocale(parsed.ui_locale);
     }
@@ -664,6 +699,7 @@ async function doImport(file) {
       typeof parsed.overlayHighRiskTld === "boolean" ||
       typeof parsed.lockBlacklist === "boolean" ||
       typeof parsed.lockYoung === "boolean" ||
+      typeof parsed.detectOddName === "boolean" ||
       typeof parsed.ui_locale === "string"
     );
 
@@ -681,6 +717,7 @@ async function doImport(file) {
       await loadThreshold();
       await loadOverlayToggles();
       await loadLockToggles();
+      await loadOddNameToggle();
       // 語言可能變了,簡單重整頁面即可套用
       if (typeof parsed.ui_locale === "string" && parsed.ui_locale !== getCurrentLocale()) {
         location.reload();
@@ -718,4 +755,5 @@ $("backup-file").addEventListener("change", (e) => {
   loadThreshold();
   loadOverlayToggles();
   loadLockToggles();
+  loadOddNameToggle();
 })();
