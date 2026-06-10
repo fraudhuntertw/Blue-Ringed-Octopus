@@ -267,6 +267,18 @@
   "popupStatusBrandSpoof": { "message": "⚠️ 網址疑似假冒 $1（官方網域:$2）,請特別小心" },
   "brandSpoofListLabel": { "message": "內建品牌清單:" },
 
+  "tagWellKnown": { "message": "知名網站" },
+  "statusWellKnown": { "message": "✅ 知名網站（內建白名單,直接放行、未送出查詢）" },
+  "lookupStatusWellKnown": { "message": "✅ 知名網站（內建白名單,直接放行、未送出查詢）" },
+  "allowlistHeading": { "message": "內建知名網站白名單" },
+  "allowlistHint": { "message": "內建約 2,900 個經真實流量驗證的網域（Chrome 使用者體驗報告 CrUX:台灣前 5,000 名 + 全球前 1,000 名,經七道過濾:跨月持續性、多租戶託管、高風險 TLD、成人/盜版/賭博等內容類別、縮網址與開店平台、165 涉詐名單比對）。命中時直接放行、不送出 RDAP 查詢,也不跑品牌偽裝/奇怪域名偵測 —— 同時減少誤判與隱私外洩。注意:「在榜」代表流量與穩定性,不是品質背書;你自己的黑名單永遠優先於這份清單。預設開啟。" },
+  "allowlistLabel": { "message": "啟用內建知名網站白名單" },
+  "allowlistSub": { "message": "命中清單的網域直接放行（半透明 icon、不顯示提醒）。清單在打包時產生、隨版本更新,執行期不會下載任何東西。" },
+  "allowlistEnabled": { "message": "已啟用（知名網站直接放行,不查 RDAP）" },
+  "allowlistDisabled": { "message": "未啟用" },
+  "allowlistFlagSaved": { "message": "已儲存「內建知名網站白名單」（$1）— 下次造訪生效" },
+  "allowlistMeta": { "message": "目前清單:$1 筆（CrUX 資料月份 $2）" },
+
   "markSafeBtn": { "message": "加入白名單" },
 
   "addDomainInvalid": { "message": "無法解析成網域（請輸入像 example.com 的網域,不接受 IP 或單一字詞）" },

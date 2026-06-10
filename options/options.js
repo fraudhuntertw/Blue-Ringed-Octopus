@@ -540,6 +540,44 @@ async function saveBrandSpoofFlag() {
 
 $("brand-spoof-detect").addEventListener("change", saveBrandSpoofFlag);
 
+// === 內建知名網站白名單（F5,預設開）===
+
+function setAllowlistInfo(text, status /* "saved" | "error" | null */) {
+  const el = $("builtin-allowlist-info");
+  el.textContent = text;
+  el.className = "settings-info";
+  if (status === "saved") el.classList.add("is-saved");
+  if (status === "error") el.classList.add("is-error");
+}
+
+async function loadAllowlistToggle() {
+  const resp = await sendMessage({ type: "GET_USE_BUILTIN_ALLOWLIST" });
+  // 預設「開」:讀取失敗時不可硬轉 false（同 brand-spoof 開關的理由）。
+  const on = resp && typeof resp.value === "boolean" ? resp.value : true;
+  $("builtin-allowlist").checked = on;
+  setAllowlistInfo(on ? t("allowlistEnabled") : t("allowlistDisabled"), null);
+}
+
+async function loadAllowlistMeta() {
+  const resp = await sendMessage({ type: "GET_ALLOWLIST_META" });
+  const m = resp && resp.meta;
+  if (!m || !m.count) return;
+  $("allowlist-meta").textContent = t("allowlistMeta", m.count, m.sourceMonth);
+}
+
+async function saveAllowlistFlag() {
+  const value = $("builtin-allowlist").checked;
+  const resp = await sendMessage({ type: "SET_USE_BUILTIN_ALLOWLIST", value });
+  if (resp && resp.ok) {
+    setAllowlistInfo(t("allowlistFlagSaved", t(value ? "labelOn" : "labelOff")), "saved");
+  } else {
+    setAllowlistInfo(t("saveFailed", (resp && resp.error) || t("unknownError")), "error");
+    $("builtin-allowlist").checked = !value; // 回滾畫面狀態
+  }
+}
+
+$("builtin-allowlist").addEventListener("change", saveAllowlistFlag);
+
 // === 快取 ===
 
 async function refreshCacheCount() {
@@ -598,7 +636,7 @@ async function doExport() {
   const btn = $("backup-export");
   btn.disabled = true;
   try {
-    const [wl, bl, tldDetail, threshold, overlay, lock, oddName, brandSpoof] = await Promise.all([
+    const [wl, bl, tldDetail, threshold, overlay, lock, oddName, brandSpoof, allowlist] = await Promise.all([
       sendMessage({ type: "GET_WHITELIST" }),
       sendMessage({ type: "GET_BLACKLIST" }),
       sendMessage({ type: "GET_HIGH_RISK_TLDS_DETAIL" }),
@@ -607,6 +645,7 @@ async function doExport() {
       sendMessage({ type: "GET_LOCK_FLAGS" }),
       sendMessage({ type: "GET_DETECT_ODD_NAME" }),
       sendMessage({ type: "GET_DETECT_BRAND_SPOOF" }),
+      sendMessage({ type: "GET_USE_BUILTIN_ALLOWLIST" }),
     ]);
     const whitelist = (wl && wl.list) || [];
     const blacklist = (bl && bl.list) || [];
@@ -632,6 +671,7 @@ async function doExport() {
       // 預設「開」的設定:讀取失敗時匯出 true（預設值）,不可硬轉 false,
       // 否則備份→還原會把別台機器的預設開靜默關掉。
       detectBrandSpoof: brandSpoof && typeof brandSpoof.value === "boolean" ? brandSpoof.value : true,
+      useBuiltinAllowlist: allowlist && typeof allowlist.value === "boolean" ? allowlist.value : true,
       ui_locale: getCurrentLocale(),
     };
 
@@ -723,6 +763,9 @@ async function applyImport(parsed, includeSettings) {
     if (typeof parsed.detectBrandSpoof === "boolean") {
       await sendMessage({ type: "SET_DETECT_BRAND_SPOOF", value: parsed.detectBrandSpoof });
     }
+    if (typeof parsed.useBuiltinAllowlist === "boolean") {
+      await sendMessage({ type: "SET_USE_BUILTIN_ALLOWLIST", value: parsed.useBuiltinAllowlist });
+    }
     if (typeof parsed.ui_locale === "string" && SUPPORTED_LOCALES.includes(parsed.ui_locale)) {
       await setPreferredLocale(parsed.ui_locale);
     }
@@ -765,6 +808,7 @@ async function doImport(file) {
       typeof parsed.lockYoung === "boolean" ||
       typeof parsed.detectOddName === "boolean" ||
       typeof parsed.detectBrandSpoof === "boolean" ||
+      typeof parsed.useBuiltinAllowlist === "boolean" ||
       typeof parsed.ui_locale === "string"
     );
 
@@ -784,6 +828,7 @@ async function doImport(file) {
       await loadLockToggles();
       await loadOddNameToggle();
       await loadBrandSpoofToggle();
+      await loadAllowlistToggle();
       // 語言可能變了,簡單重整頁面即可套用
       if (typeof parsed.ui_locale === "string" && parsed.ui_locale !== getCurrentLocale()) {
         location.reload();
@@ -829,4 +874,6 @@ $("backup-file").addEventListener("change", (e) => {
   loadOddNameToggle();
   loadBrandSpoofToggle();
   loadBrandList();
+  loadAllowlistToggle();
+  loadAllowlistMeta();
 })();

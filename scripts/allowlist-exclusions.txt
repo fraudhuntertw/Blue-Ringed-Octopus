@@ -1,0 +1,130 @@
+# 內建白名單的人工排除表。一行一個 eTLD+1,# 開頭為註解。
+# 兩類:(1) PSL PRIVATE 區段沒收錄的多租戶託管域 —— 任何人都能在其子網域 / 路徑
+# 架釣魚頁,整域白名單化等於替攻擊者背書;(2) 縮網址 —— 濫用發生在「路徑」層,
+# PSL 與 eTLD+1 都管不到,絕不可白名單化。
+# 依據:2022-23 有 36% 釣魚攻擊架在子網域供應商上(DNSRF);Tranco 論文實證
+# top list 含已標記惡意網域且曾被整份白名單化釀禍(Quad9 / Majestic 案例)。
+
+# --- 多租戶託管(實測不在 PSL PRIVATE 區段) ---
+1shop.tw            # 一頁式商店平台,租戶子網域中有 165 通報的詐騙商店
+shoplineapp.com     # SHOPLINE 租戶商店預設掛 *.shoplineapp.com,官方自承曾被一頁式詐騙濫用
+shop2000.com.tw     # 「30 秒架站」開店平台,商店以路徑承載
+weebly.com
+weeblysite.com
+wordpress.com
+tumblr.com
+glitch.me
+000webhostapp.com
+godaddysites.com
+mystrikingly.com
+webnode.tw
+webflow.io
+fc2.com             # *.web.fc2.com 免費網頁空間,長年釣魚溫床
+blog.jp             # livedoor 任意使用者部落格子網域
+lofter.com          # 網易 LOFTER 使用者子網域
+itch.io             # 使用者自傳遊戲頁(曾散布惡意程式)
+fanbox.cc           # 使用者創作者頁子網域
+
+# --- 表單 / 報名服務(任何人可建表單收個資 —— 假報名/假團購正是長輩詐騙動線) ---
+surveycake.com
+surveymonkey.com
+beclass.com
+bao-ming.com
+groupbuyforms.tw
+
+# --- 可全頁渲染使用者內容的平台 ---
+codepen.io          # /full/ 檢視可整頁跑任意使用者 HTML/JS
+gamma.app           # 使用者簡報頁,有文件記載的釣魚濫用
+appsheet.com        # 使用者應用頁,有文件記載的釣魚濫用
+hackmd.io           # 任意使用者文件頁
+
+# --- 個人頁聚合(per-user 路徑) ---
+linktr.ee
+beacons.ai
+lit.link
+portaly.cc
+heylink.me
+
+# --- 無照賭博 / 亂碼域名(撐過跨月持續性過濾的存活者;逐月 build 時檢視輸出補列) ---
+# 準則:中文市場無照數字型賭博站與不明亂碼域。國際持照博弈商(bet365 等)不在此列
+# —— 它們是正牌網站,本工具防詐不防賭。
+viifwjox.com        # 隨機字串域
+megafunpro2025.com  # 帶年份拋棄式命名
+rikard2026.com
+notorious-2019.com
+as5588.com
+88win5.com
+888ry8.com
+gb8888.net
+inja777.com
+qek888.com
+rg8888.org
+sc888.net
+ub1818.com
+you888a.com
+zhipai88.com
+jaya9bangladesh.com
+777tv.ai
+777tv.ru
+888scoreonline.net
+enjoyit999.com
+
+# --- 廣告聯播網落地頁輪替域(已驗證 Clickadu popunder 網路) ---
+blahlivedsnowdrop.com
+buffooncountabletreble.com
+constructpreachystopper.com
+crummydevioussucculent.com
+decafeligiblyhad.com
+fractionfridgejudiciary.com
+
+# --- 個人頁聚合(per-user 路徑) ---
+linktr.ee
+beacons.ai
+lit.link
+portaly.cc
+
+# --- 縮網址(全球) ---
+ouo.io              # 廣告型短網址
+ouo.press
+bit.ly
+tinyurl.com
+t.co
+goo.gl
+is.gd
+v.gd
+ow.ly
+buff.ly
+cutt.ly
+rebrand.ly
+rb.gy
+shorturl.at
+tiny.cc
+t.ly
+bl.ink
+soo.gd
+s.id
+dub.sh
+shorturl.com
+
+# --- 縮網址(台灣常見) ---
+reurl.cc
+pse.is
+psee.io
+lihi.cc
+lihi1.cc
+lihi2.cc
+lihi3.cc
+lihi.io
+lihi.tv
+ppt.cc
+0rz.tw
+myppt.cc
+risu.io
+tr.ee
+han.gl
+lurl.cc
+sl.ink
+
+# --- App 連結服務(子網域屬不同租戶,與 lib/brands.js 的豁免清單同步) ---
+onelink.me
+adj.st

@@ -86,6 +86,7 @@ header .subtitle {
 .tag-registrar { background: #f97316; color: #fff; }
 .tag-odd       { background: #ea580c; color: #fff; }
 .tag-brand     { background: #c2410c; color: #fff; }
+.tag-known     { background: #0e7490; color: #fff; }
 
 .details {
   margin-top: 8px;

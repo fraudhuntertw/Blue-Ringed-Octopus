@@ -267,6 +267,18 @@
   "popupStatusBrandSpoof": { "message": "⚠️ Address may impersonate $1 (official domain: $2) — be very careful" },
   "brandSpoofListLabel": { "message": "Built-in brand list:" },
 
+  "tagWellKnown": { "message": "Well-known site" },
+  "statusWellKnown": { "message": "✅ Well-known site (built-in allowlist — passed, no lookup sent)" },
+  "lookupStatusWellKnown": { "message": "✅ Well-known site (built-in allowlist — passed, no lookup sent)" },
+  "allowlistHeading": { "message": "Built-in well-known-site allowlist" },
+  "allowlistHint": { "message": "About 2,900 domains validated by real user traffic (Chrome UX Report: Taiwan top 5,000 + global top 1,000, run through seven filters: cross-month persistence, multi-tenant hosting, high-risk TLDs, adult/piracy/gambling content categories, URL shorteners and storefront builders, and the 165 anti-fraud suspended-domain list). Matching domains pass immediately — no RDAP lookup, and brand-spoofing / odd-name detection is skipped too — fewer false alarms and less privacy leakage at once. Note: being on the list reflects traffic and stability, not an endorsement; your own blacklist always takes precedence. On by default." },
+  "allowlistLabel": { "message": "Enable the built-in allowlist" },
+  "allowlistSub": { "message": "Matching domains pass immediately (translucent icon, no reminders). The list is generated at build time and ships with each release — nothing is downloaded at runtime." },
+  "allowlistEnabled": { "message": "Enabled (well-known sites pass without RDAP lookups)" },
+  "allowlistDisabled": { "message": "Disabled" },
+  "allowlistFlagSaved": { "message": "Saved \"Built-in well-known-site allowlist\" ($1) — applies on next visit" },
+  "allowlistMeta": { "message": "Current list: $1 domains (CrUX data month $2)" },
+
   "markSafeBtn": { "message": "Add to whitelist" },
 
   "addDomainInvalid": { "message": "Couldn't parse this as a domain (enter something like example.com — IP addresses or single words are not accepted)" },

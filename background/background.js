@@ -34,6 +34,8 @@ import {
   setDetectOddName,
   getDetectBrandSpoof,
   setDetectBrandSpoof,
+  getUseBuiltinAllowlist,
+  setUseBuiltinAllowlist,
 } from "../lib/settings.js";
 import { findBrandSpoof, getBrandList } from "../lib/brands.js";
 import { incRdapFetch, incCacheHit, incSkipByList, getStats } from "../lib/stats.js";
@@ -55,6 +57,8 @@ import {
   getTrustedTldList,
   isHighRiskRegistrar,
   getHighRiskRegistrarList,
+  isWellKnown,
+  getAllowlistMeta,
 } from "../lib/lists.js";
 import { initI18n, t, LOCALE_STORAGE_KEY } from "../lib/i18n.js";
 
@@ -378,6 +382,8 @@ async function evaluateDomain(domain, { allowFetch = true, hostname = null } = {
     blacklisted: false,
     whitelisted: false,
     trustedTld: false,
+    // 內建知名網站白名單（F5）命中:放行且未查 RDAP。
+    wellKnown: false,
     highRiskTld: false,
     highRiskRegistrar: false,
     // 奇怪域名（偵測奇怪域名功能）：主域名過長 / 含連字號。
@@ -393,9 +399,9 @@ async function evaluateDomain(domain, { allowFetch = true, hostname = null } = {
     brandSpoofOfficial: null,     // 該品牌主要官方網域（如 "paypal.com"）
     threshold: null,
     result: null,
-    // 衍生分類：blacklist / whitelist / trusted / young / high_risk_tld /
-    //           high_risk_registrar / brand_subdomain / odd_name / ok /
-    //           unsupported / error / not_queried
+    // 衍生分類：blacklist / whitelist / trusted / well_known / young /
+    //           high_risk_tld / high_risk_registrar / brand_subdomain /
+    //           odd_name / ok / unsupported / error / not_queried
     classification: "ok",
     iconState: "normal",          // checkTab 用：normal / alert / warn / blacklist / whitelist
     warnReason: null,             // checkTab 用：要彈哪種橫幅（null=不彈）
@@ -425,6 +431,17 @@ async function evaluateDomain(domain, { allowFetch = true, hostname = null } = {
   if (isTrustedTld(domain)) {
     v.trustedTld = true;
     v.classification = "trusted";
+    v.iconState = "whitelist";
+    return v;
+  }
+
+  // 內建知名網站白名單（F5）：CrUX 真實流量榜（台灣+全球）經 PSL PRIVATE /
+  // 排除表 / 165 涉詐名單過濾後打包（lib/allowlist.js）。命中即放行且不查 RDAP
+  // —— 同時降低誤判面與隱私外洩。必須位於黑名單 / 使用者白名單之後：top list
+  // 可被操縱（Tranco, NDSS 2019）,絕不允許它覆蓋使用者自己的判斷。
+  if ((await getUseBuiltinAllowlist()) && isWellKnown(domain)) {
+    v.wellKnown = true;
+    v.classification = "well_known";
     v.iconState = "whitelist";
     return v;
   }
@@ -528,8 +545,8 @@ async function checkTab(tabId, url) {
   const hostname = new URL(url).hostname;
   const verdict = await evaluateDomain(domain, { hostname });
 
-  // 節流統計（與舊版 checkTab 語意一致）
-  if (verdict.blacklisted || verdict.whitelisted || verdict.trustedTld) {
+  // 節流統計（與舊版 checkTab 語意一致;內建白名單命中同屬「名單跳過 RDAP」）
+  if (verdict.blacklisted || verdict.whitelisted || verdict.trustedTld || verdict.wellKnown) {
     incSkipByList();
   } else if (verdict.cacheHit) {
     incCacheHit();
@@ -684,7 +701,7 @@ async function handleCheckDomain(rawInput) {
   // 查詢台也會用到 RDAP,計入節流統計（與 checkTab 同口徑）
   if (verdict.fetched) incRdapFetch();
   else if (verdict.cacheHit) incCacheHit();
-  else if (verdict.blacklisted || verdict.whitelisted || verdict.trustedTld) incSkipByList();
+  else if (verdict.blacklisted || verdict.whitelisted || verdict.trustedTld || verdict.wellKnown) incSkipByList();
 
   return { ok: true, state: "checked", host, domain, isShortener, verdict };
 }
@@ -721,13 +738,13 @@ async function lockedReasonFor(domain) {
   // 鎖定守門用到的 RDAP 查詢也計入節流統計（與 checkTab / handleCheckDomain 同口徑）。
   if (v.fetched) incRdapFetch();
   else if (v.cacheHit) incCacheHit();
-  else if (v.blacklisted || v.whitelisted || v.trustedTld) incSkipByList();
+  else if (v.blacklisted || v.whitelisted || v.trustedTld || v.wellKnown) incSkipByList();
 
   if (lockBl && v.classification === "blacklist") return "blacklist";
   if (lockYoung) {
     if (v.classification === "young") return "young";
-    // blacklist / whitelist / trusted 是 RDAP 之前就確定的分類,與 young 無關,不鎖。
-    const settled = ["blacklist", "whitelist", "trusted"].includes(v.classification);
+    // blacklist / whitelist / trusted / well_known 是 RDAP 之前就確定的分類,與 young 無關,不鎖。
+    const settled = ["blacklist", "whitelist", "trusted", "well_known"].includes(v.classification);
     // 是否取得權威的 RDAP ok 結論（能據以斷定「已非 young」）。不看 classification,
     // 因為 maybeFlagOddName 會把 unsupported/error 改寫成 odd_name —— 改看原始 result。
     const authoritative = !!(v.result && v.result.status === "ok" && typeof v.result.ageDays === "number");
@@ -831,6 +848,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     SET_DETECT_BRAND_SPOOF: () => setDetectBrandSpoof(msg.value),
     GET_BRAND_LIST: () => Promise.resolve({ list: getBrandList() }),
 
+    GET_USE_BUILTIN_ALLOWLIST: () => getUseBuiltinAllowlist().then(value => ({ value })),
+    SET_USE_BUILTIN_ALLOWLIST: () => setUseBuiltinAllowlist(msg.value),
+    GET_ALLOWLIST_META: () => Promise.resolve({ meta: getAllowlistMeta() }),
+
     GET_SESSION_STATS: () => getStats().then(s => ({ stats: s })),
   };
 
@@ -851,7 +872,7 @@ async function handleGetStatus(url) {
   const domain = extractRootDomain(url);
   if (!domain) return { state: "invalid_domain" };
 
-  const [blacklisted, whitelisted, cached, threshold, highRiskTld, lockBlacklist, lockYoung, detectOddName, detectBrandSpoof] = await Promise.all([
+  const [blacklisted, whitelisted, cached, threshold, highRiskTld, lockBlacklist, lockYoung, detectOddName, detectBrandSpoof, useAllowlist] = await Promise.all([
     isBlacklisted(domain),
     isWhitelisted(domain),
     getCache(domain),
@@ -861,15 +882,21 @@ async function handleGetStatus(url) {
     getLockYoung(),
     getDetectOddName(),
     getDetectBrandSpoof(),
+    getUseBuiltinAllowlist(),
   ]);
 
+  // 內建白名單（與 evaluateDomain 同口徑:黑/白名單與可信 TLD 優先）。
+  const wellKnown = !!(useAllowlist && !blacklisted && !whitelisted && !isTrustedTld(domain) && isWellKnown(domain));
   const registrarName = cached && cached.registrar ? cached.registrar.name : null;
-  // 奇怪域名（開關開啟時才評估）：黑名單 / 白名單命中時不顯示此提醒（已有更明確狀態）。
-  const oddInsp = (detectOddName && !blacklisted && !whitelisted && !isTrustedTld(domain))
+  // wellKnown 命中時 highRiskTld / highRiskRegistrar 一律歸零,與 evaluateDomain 的
+  // well_known 早退口徑一致 —— 否則 popup 會「綠色知名網站狀態 + 橘色高風險標籤」
+  // 同框,與查詢台對同一網域的結果矛盾（長輩以顏色判讀,不可同框互斥訊號）。
+  // 奇怪域名（開關開啟時才評估）：黑名單 / 白名單 / 內建白名單命中時不顯示此提醒（已有更明確狀態）。
+  const oddInsp = (detectOddName && !blacklisted && !whitelisted && !wellKnown && !isTrustedTld(domain))
     ? inspectDomainName(domain)
     : { odd: false, label: null, reasons: [] };
   // 子網域品牌偽裝（同上閘控;shouldSkip 已通過,URL 必可解析）。
-  const brandHit = (detectBrandSpoof && !blacklisted && !whitelisted && !isTrustedTld(domain))
+  const brandHit = (detectBrandSpoof && !blacklisted && !whitelisted && !wellKnown && !isTrustedTld(domain))
     ? findBrandSpoof(new URL(url).hostname, domain)
     : null;
   return {
@@ -878,8 +905,9 @@ async function handleGetStatus(url) {
     blacklisted,
     whitelisted,
     trustedTld: isTrustedTld(domain),
-    highRiskTld,
-    highRiskRegistrar: isHighRiskRegistrar(registrarName),
+    wellKnown,
+    highRiskTld: wellKnown ? false : highRiskTld,
+    highRiskRegistrar: wellKnown ? false : isHighRiskRegistrar(registrarName),
     oddName: oddInsp.odd,
     oddNameReasons: oddInsp.reasons,
     oddNameLabel: oddInsp.label,

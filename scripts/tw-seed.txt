@@ -1,0 +1,29 @@
+# 人工台灣種子清單（併入內建白名單）。
+# 收錄準則:對台灣長輩關鍵、但可能落在 CrUX 台灣榜 rank<=5000 bucket 邊緣的網域。
+# 一行一個 eTLD+1,# 開頭為註解。gov.tw / edu.tw / mil.tw 已由可信 TLD 直接放行,不要列在這裡。
+# 每筆都要附理由,code review 時逐筆檢視。
+
+# --- 公股行庫(長輩主力銀行;CrUX 全球榜實測落在 3 萬~16 萬名,國別榜也可能在邊緣) ---
+bot.com.tw          # 臺灣銀行
+landbank.com.tw     # 土地銀行
+tcb-bank.com.tw     # 合作金庫
+firstbank.com.tw    # 第一銀行
+hncb.com.tw         # 華南銀行
+bankchb.com         # 彰化銀行
+megabank.com.tw     # 兆豐銀行
+tbb.com.tw          # 臺灣企銀
+
+# --- 交通 / 票證(長輩高頻;非 gov.tw) ---
+thsrc.com.tw        # 台灣高鐵
+easycard.com.tw     # 悠遊卡
+i-pass.com.tw       # 一卡通
+
+# --- 四大超商(繳費 / 取貨動線) ---
+7-11.com.tw         # 統一超商
+familymart.com.tw   # 全家
+hilife.com.tw       # 萊爾富
+okmart.com.tw       # OK 超商
+
+# --- 主要金流(結帳跳轉頁,被誤警示會直接打斷付款) ---
+ecpay.com.tw        # 綠界科技
+newebpay.com        # 藍新金流

@@ -199,6 +199,7 @@ async function renderStatus() {
 
   const tags = [];
   if (resp.trustedTld)        tags.push({ cls: "tag-trusted",   label: t("tagTrusted") });
+  if (resp.wellKnown)         tags.push({ cls: "tag-known",     label: t("tagWellKnown") });
   if (resp.highRiskTld)       tags.push({ cls: "tag-tld",       label: t("tagHighRiskTld") });
   if (resp.highRiskRegistrar) tags.push({ cls: "tag-registrar", label: t("tagHighRiskRegistrar") });
   if (resp.oddName)           tags.push({ cls: "tag-odd",       label: t("tagOddName") });
@@ -225,6 +226,14 @@ async function renderStatus() {
   if (resp.trustedTld) {
     setStatus(t("statusTrustedTld"), "is-safe");
     hideDetails();
+    updateActionButtons(resp);
+    return;
+  }
+
+  if (resp.wellKnown) {
+    setStatus(t("statusWellKnown"), "is-safe");
+    if (resp.result && resp.result.status === "ok") showDetails(resp.result, resp.highRiskRegistrar);
+    else hideDetails();
     updateActionButtons(resp);
     return;
   }
@@ -319,7 +328,9 @@ function updateActionButtons(resp) {
   const blLocked = !!(resp.blacklisted && resp.lockBlacklist);
   // 短註冊鎖定 → 不能把尚未白名單的短註冊網域「加入白名單」；
   //   已白名單則按鈕是「移出白名單」(會加嚴,不削弱),不鎖。
-  const wlLocked = !!(isYoung && resp.lockYoung && !resp.whitelisted);
+  //   可信 TLD / 內建白名單命中是 background 守門的 settled 分類（實際會放行）,
+  //   殘留 cache 的 ageDays 不可反過來把按鈕鎖住 —— 與守門結論保持一致。
+  const wlLocked = !!(isYoung && resp.lockYoung && !resp.whitelisted && !resp.wellKnown && !resp.trustedTld);
 
   if (blLocked) {
     blBtn.disabled = true;
@@ -394,6 +405,8 @@ function lookupStatusOf(verdict) {
       return { text: t("statusWhitelisted"), cls: "is-safe" };
     case "trusted":
       return { text: t("statusTrustedTld"), cls: "is-safe" };
+    case "well_known":
+      return { text: t("lookupStatusWellKnown"), cls: "is-safe" };
     case "young":
       return { text: t("statusYoung", r ? r.ageDays : "?", threshold), cls: "is-warning" };
     case "high_risk_tld":
@@ -419,6 +432,7 @@ function lookupStatusOf(verdict) {
 function lookupTags(verdict) {
   const tags = [];
   if (verdict.trustedTld)        tags.push({ cls: "tag-trusted",   label: t("tagTrusted") });
+  if (verdict.wellKnown)         tags.push({ cls: "tag-known",     label: t("tagWellKnown") });
   if (verdict.highRiskTld)       tags.push({ cls: "tag-tld",       label: t("tagHighRiskTld") });
   if (verdict.highRiskRegistrar) tags.push({ cls: "tag-registrar", label: t("tagHighRiskRegistrar") });
   if (verdict.oddName)           tags.push({ cls: "tag-odd",       label: t("tagOddName") });
