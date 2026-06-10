@@ -32,7 +32,10 @@ import {
   setLockYoung,
   getDetectOddName,
   setDetectOddName,
+  getDetectBrandSpoof,
+  setDetectBrandSpoof,
 } from "../lib/settings.js";
+import { findBrandSpoof, getBrandList } from "../lib/brands.js";
 import { incRdapFetch, incCacheHit, incSkipByList, getStats } from "../lib/stats.js";
 import {
   isHighRiskTld,
@@ -115,6 +118,12 @@ function buildContentStrings(payload) {
   } else if (payload.reason === "odd_name") {
     message = t("contentWarnOddName", payload.domain, oddNameReasonText(payload.oddNameReasons));
     title = t("overlayTitleOddName");
+  } else if (payload.reason === "brand_subdomain") {
+    // $2 必須是 brandToken（網址裡實際出現的字串）:約 2/3 的內建品牌顯示名是
+    // 中文（蝦皮購物、中國信託…）,若宣稱「網址夾帶『蝦皮購物』字樣」,長輩對照
+    // 網址列找不到該字樣,反而會懷疑警告本身。品牌名（$3）只用於「不是 XX 官方」。
+    message = t("contentWarnBrandSpoof", payload.domain, payload.brandToken, payload.brandName, payload.brandOfficial);
+    title = t("overlayTitleBrandSpoof");
   }
 
   const tags = [];
@@ -129,6 +138,9 @@ function buildContentStrings(payload) {
   }
   if (payload.reason === "odd_name") {
     tags.push({ cls: "zm-tag zm-tag-tld", label: t("tagOddName") });
+  }
+  if (payload.reason === "brand_subdomain") {
+    tags.push({ cls: "zm-tag zm-tag-tld", label: t("tagBrandSpoof") });
   }
 
   // === 為何被標記:逐項證據 + 建議怎麼做（Q3）===
@@ -161,12 +173,19 @@ function buildContentStrings(payload) {
       detail: t("evidenceOddNameDetail", payload.oddNameLabel, oddNameReasonText(payload.oddNameReasons)),
     });
   }
+  if (payload.reason === "brand_subdomain" && payload.brandToken) {
+    evidence.push({
+      label: t("evidenceBrandSpoofLabel"),
+      detail: t("evidenceBrandSpoofDetail", payload.brandToken, payload.brandName, payload.brandOfficial),
+    });
+  }
 
   let explain = t("explainGeneric");
   if (payload.reason === "young") explain = t("explainYoung");
   else if (payload.reason === "blacklist") explain = t("explainBlacklist");
   else if (payload.reason === "high_risk_tld") explain = t("explainHighRiskTld");
   else if (payload.reason === "odd_name") explain = t("explainOddName");
+  else if (payload.reason === "brand_subdomain") explain = t("explainBrandSpoof");
 
   return {
     message,
@@ -244,6 +263,11 @@ function badgeForVerdict(verdict) {
     // 越年輕分數越高:剛註冊 ≈95,接近門檻 ≈70
     return { text: String(Math.round(95 - frac * 25)), bg: "#c0392b" };
   }
+  if (verdict.brandSpoof) {
+    // 子網域品牌偽裝:特異性最高的橘色訊號（整段 label 命中品牌且 eTLD+1 非官方）,
+    // 分數高於高風險 TLD（55）/ registrar（40）/ 奇怪域名（30）。
+    return { text: "60", bg: "#d97706" };
+  }
   if (verdict.classification === "odd_name" && !verdict.highRiskTld && !verdict.highRiskRegistrar) {
     // 奇怪域名:提醒級、純結構啟發式,風險分數刻意低於高風險 TLD / registrar。
     // 只在「純 odd_name」(未同時命中高風險 TLD / registrar)時給 30。
@@ -307,6 +331,31 @@ function maybeFlagOddName(v) {
 }
 
 /**
+ * 子網域品牌偽裝（F8a）：提醒級的頂端橫幅。
+ *
+ * 優先序介於紅色告警與其他橘色提醒之間：絕不蓋過 blacklist / young（紅色,
+ * 訊息更強烈）,但「允許」蓋過 high_risk_tld —— paypal.com.evil.xyz 這種情境,
+ * 「網址假冒 PayPal」遠比「.xyz 是高風險 TLD」具體可行動;TLD 訊號仍以
+ * isHighRiskTld 標籤與證據項保留呈現,不會遺失。
+ *
+ * v.brandSpoof 已在 evaluateDomain 內套過開關閘控與黑/白/可信排除;
+ * 與 maybeFlagOddName 同樣,即使未升級成橫幅,旗標仍保留給 popup / lookup 標籤。
+ *
+ * @param {object} v verdict（就地修改後回傳）
+ * @returns {object}
+ */
+function maybeFlagBrandSpoof(v) {
+  if (!v.brandSpoof) return v;
+  if (v.warnReason && v.warnReason !== "high_risk_tld") return v;
+  v.warnReason = "brand_subdomain";
+  if (v.iconState === "normal") v.iconState = "warn";
+  if (["ok", "not_queried", "unsupported", "error", "high_risk_tld"].includes(v.classification)) {
+    v.classification = "brand_subdomain";
+  }
+  return v;
+}
+
+/**
  * 純判定函式：對單一網域跑完整檢查鏈，回傳結構化 verdict。
  *
  * 設計重點（Q1 共用地基）：
@@ -317,10 +366,13 @@ function maybeFlagOddName(v) {
  *   - 短路順序與舊版 checkTab 完全相同：blacklist → whitelist → trustedTld → RDAP。
  *
  * @param {string} domain registrable domain（eTLD+1）
- * @param {{allowFetch?: boolean}} opts allowFetch=false 時 cache miss 不打 RDAP（給「只看本地」用）
+ * @param {{allowFetch?: boolean, hostname?: string|null}} opts
+ *        allowFetch=false 時 cache miss 不打 RDAP（給「只看本地」用）;
+ *        hostname 為完整 host,供「子網域品牌偽裝」偵測 —— 只有 checkTab /
+ *        handleCheckDomain 拿得到並傳入,其他呼叫端（如 lockedReasonFor）不傳則跳過該偵測。
  * @returns {Promise<object>} verdict
  */
-async function evaluateDomain(domain, { allowFetch = true } = {}) {
+async function evaluateDomain(domain, { allowFetch = true, hostname = null } = {}) {
   const v = {
     domain,
     blacklisted: false,
@@ -333,10 +385,17 @@ async function evaluateDomain(domain, { allowFetch = true } = {}) {
     oddName: false,
     oddNameReasons: [],           // ⊆ {"long","hyphen"}
     oddNameLabel: null,           // 命中的主域名 label（不含 TLD）
+    // 子網域品牌偽裝（F8a）：子網域夾帶品牌 token 而 eTLD+1 非該品牌官方網域。
+    // 已套用開關閘控 + 排除白名單/可信/黑名單,故 true 代表「該顯示提醒」。
+    brandSpoof: false,
+    brandSpoofBrand: null,        // 品牌顯示名（如 "PayPal"）
+    brandSpoofToken: null,        // 命中的子網域 label（如 "paypal"）
+    brandSpoofOfficial: null,     // 該品牌主要官方網域（如 "paypal.com"）
     threshold: null,
     result: null,
     // 衍生分類：blacklist / whitelist / trusted / young / high_risk_tld /
-    //           high_risk_registrar / odd_name / ok / unsupported / error / not_queried
+    //           high_risk_registrar / brand_subdomain / odd_name / ok /
+    //           unsupported / error / not_queried
     classification: "ok",
     iconState: "normal",          // checkTab 用：normal / alert / warn / blacklist / whitelist
     warnReason: null,             // checkTab 用：要彈哪種橫幅（null=不彈）
@@ -383,6 +442,19 @@ async function evaluateDomain(domain, { allowFetch = true } = {}) {
     }
   }
 
+  // 子網域品牌偽裝訊號（F8a,開關閘控,純本地比對,與 RDAP 無關）。
+  // 同上,此處只計算「顯示用旗標」;是否升級成橫幅由 maybeFlagBrandSpoof 決定。
+  // 需要完整 hostname,沒有傳入（如 lockedReasonFor 路徑）就跳過。
+  if (hostname && (await getDetectBrandSpoof())) {
+    const hit = findBrandSpoof(hostname, domain);
+    if (hit) {
+      v.brandSpoof = true;
+      v.brandSpoofBrand = hit.brand;
+      v.brandSpoofToken = hit.token;
+      v.brandSpoofOfficial = hit.official;
+    }
+  }
+
   // 查詢註冊時間（cache → RDAP）
   let result = await getCache(domain);
   if (result) {
@@ -408,7 +480,7 @@ async function evaluateDomain(domain, { allowFetch = true } = {}) {
     v.classification = v.highRiskTld ? "high_risk_tld" : (result ? result.status : "not_queried");
     v.iconState = v.highRiskTld ? "warn" : "normal";
     if (v.highRiskTld) v.warnReason = "high_risk_tld";
-    return maybeFlagOddName(v);
+    return maybeFlagOddName(maybeFlagBrandSpoof(v));
   }
 
   v.threshold = await getThreshold();
@@ -426,7 +498,7 @@ async function evaluateDomain(domain, { allowFetch = true } = {}) {
     v.classification = "ok";
     v.iconState = "normal";
   }
-  return maybeFlagOddName(v);
+  return maybeFlagOddName(maybeFlagBrandSpoof(v));
 }
 
 /**
@@ -452,7 +524,9 @@ async function checkTab(tabId, url) {
   }
   console.info(`[BRO]  → domain=${domain}`);
 
-  const verdict = await evaluateDomain(domain);
+  // 完整 hostname 供品牌偽裝偵測（shouldSkip / extractRootDomain 已確認 URL 可解析）。
+  const hostname = new URL(url).hostname;
+  const verdict = await evaluateDomain(domain, { hostname });
 
   // 節流統計（與舊版 checkTab 語意一致）
   if (verdict.blacklisted || verdict.whitelisted || verdict.trustedTld) {
@@ -501,6 +575,29 @@ async function checkTab(tabId, url) {
       domain,
       reason: "high_risk_tld",
       tld: domain.split(".").pop(),
+      ageDays: r ? r.ageDays : null,
+      registrationDate: r ? r.registrationDate : null,
+      registrarName: r && r.registrar ? r.registrar.name : null,
+      highRiskRegistrar: verdict.highRiskRegistrar,
+      registrantRedacted: !!(r && r.status === "ok" && !r.registrant),
+      overlay,
+    });
+  } else if (verdict.warnReason === "brand_subdomain") {
+    console.info(`[BRO]  → brand-spoof warn ("${verdict.brandSpoofToken}" vs ${verdict.brandSpoofOfficial})`);
+    // 品牌偽裝本身無蓋版選項;但它可能蓋過 high_risk_tld 的橫幅名額 —— 若使用者
+    // 已開「高風險 TLD 蓋版」且本頁確實命中高風險 TLD,不可把使用者明確選擇的
+    // 加強告警靜默降級成可關閉橫幅,沿用蓋版（標題/文案仍是更具體的品牌偽裝版）。
+    const overlay = verdict.highRiskTld ? await getOverlayHighRiskTld() : false;
+    // registrar / redaction 證據與 high_risk_tld 分支同口徑帶上,
+    // 避免「多一個品牌訊號,反而少了註冊商證據列」的回退。result 可能為 null。
+    const r = verdict.result;
+    sendWarning(tabId, {
+      domain,
+      reason: "brand_subdomain",
+      brandName: verdict.brandSpoofBrand,
+      brandToken: verdict.brandSpoofToken,
+      brandOfficial: verdict.brandSpoofOfficial,
+      isHighRiskTld: verdict.highRiskTld,
       ageDays: r ? r.ageDays : null,
       registrationDate: r ? r.registrationDate : null,
       registrarName: r && r.registrar ? r.registrar.name : null,
@@ -582,7 +679,7 @@ async function handleCheckDomain(rawInput) {
   }
 
   const isShortener = URL_SHORTENERS.has(domain);
-  const verdict = await evaluateDomain(domain, { allowFetch: true });
+  const verdict = await evaluateDomain(domain, { allowFetch: true, hostname: host });
 
   // 查詢台也會用到 RDAP,計入節流統計（與 checkTab 同口徑）
   if (verdict.fetched) incRdapFetch();
@@ -730,6 +827,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     GET_DETECT_ODD_NAME: () => getDetectOddName().then(value => ({ value })),
     SET_DETECT_ODD_NAME: () => setDetectOddName(msg.value),
 
+    GET_DETECT_BRAND_SPOOF: () => getDetectBrandSpoof().then(value => ({ value })),
+    SET_DETECT_BRAND_SPOOF: () => setDetectBrandSpoof(msg.value),
+    GET_BRAND_LIST: () => Promise.resolve({ list: getBrandList() }),
+
     GET_SESSION_STATS: () => getStats().then(s => ({ stats: s })),
   };
 
@@ -750,7 +851,7 @@ async function handleGetStatus(url) {
   const domain = extractRootDomain(url);
   if (!domain) return { state: "invalid_domain" };
 
-  const [blacklisted, whitelisted, cached, threshold, highRiskTld, lockBlacklist, lockYoung, detectOddName] = await Promise.all([
+  const [blacklisted, whitelisted, cached, threshold, highRiskTld, lockBlacklist, lockYoung, detectOddName, detectBrandSpoof] = await Promise.all([
     isBlacklisted(domain),
     isWhitelisted(domain),
     getCache(domain),
@@ -759,6 +860,7 @@ async function handleGetStatus(url) {
     getLockBlacklist(),
     getLockYoung(),
     getDetectOddName(),
+    getDetectBrandSpoof(),
   ]);
 
   const registrarName = cached && cached.registrar ? cached.registrar.name : null;
@@ -766,6 +868,10 @@ async function handleGetStatus(url) {
   const oddInsp = (detectOddName && !blacklisted && !whitelisted && !isTrustedTld(domain))
     ? inspectDomainName(domain)
     : { odd: false, label: null, reasons: [] };
+  // 子網域品牌偽裝（同上閘控;shouldSkip 已通過,URL 必可解析）。
+  const brandHit = (detectBrandSpoof && !blacklisted && !whitelisted && !isTrustedTld(domain))
+    ? findBrandSpoof(new URL(url).hostname, domain)
+    : null;
   return {
     state: cached ? "cached" : "not_queried",
     domain,
@@ -777,6 +883,10 @@ async function handleGetStatus(url) {
     oddName: oddInsp.odd,
     oddNameReasons: oddInsp.reasons,
     oddNameLabel: oddInsp.label,
+    brandSpoof: !!brandHit,
+    brandSpoofBrand: brandHit ? brandHit.brand : null,
+    brandSpoofToken: brandHit ? brandHit.token : null,
+    brandSpoofOfficial: brandHit ? brandHit.official : null,
     threshold,
     result: cached || null,
     // 鎖定旗標:讓 popup 決定是否停用「加入白名單 / 移出黑名單」按鈕

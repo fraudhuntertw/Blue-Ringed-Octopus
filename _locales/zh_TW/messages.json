@@ -250,6 +250,23 @@
   "oddReasonSep": { "message": "且" },
   "lookupStatusOddName": { "message": "⚠️ 奇怪域名（主域名過長或含連字號,請留意）" },
 
+  "tagBrandSpoof": { "message": "品牌偽裝" },
+  "brandSpoofHeading": { "message": "偵測子網域品牌偽裝" },
+  "brandSpoofHint": { "message": "網址的「子網域」夾帶知名品牌字樣、但實際網域與該品牌無關時（例如 paypal.com.evil.xyz,真正的網站是 evil.xyz）,於網頁上方顯示橘色提醒橫幅。這是釣魚網站讓網址「看起來像官方」最常見的手法。內建約 40 個常被冒用品牌（台灣銀行 / 購物 / 繳費 / 電信與國際大站）,純本地比對、不會額外送出資料,也沒有蓋版選項。預設開啟。" },
+  "brandSpoofLabel": { "message": "開啟子網域品牌偽裝偵測" },
+  "brandSpoofSub": { "message": "命中時跳橘色提醒橫幅（提醒級,可關閉）。只比對完整的子網域段,品牌自家網域不會誤判;一般詞品牌（LINE、Apple…）需同時出現「.com / .tw」等仿冒語境才提醒,降低誤殺。" },
+  "brandSpoofEnabled": { "message": "已啟用（子網域夾帶品牌字樣時提醒）" },
+  "brandSpoofDisabled": { "message": "未啟用" },
+  "brandSpoofFlagSaved": { "message": "已儲存「偵測子網域品牌偽裝」（$1）— 下次造訪生效" },
+  "contentWarnBrandSpoof": { "message": "警告:此頁網址夾帶「$2」字樣,但實際網站是 $1,並不是 $3 的官方網站（官方為 $4）。詐騙集團常用這種手法讓網址看起來像官方,請勿輸入帳號密碼、刷卡或付款。" },
+  "overlayTitleBrandSpoof": { "message": "警告:網址疑似假冒品牌" },
+  "explainBrandSpoof": { "message": "正牌網站不會把自家品牌名稱藏在別人網域的子網域裡,這幾乎可以確定是假冒網址。請直接離開;要使用該服務,改用官方 App 或自行輸入官網網址,不要從這個頁面點任何連結。" },
+  "evidenceBrandSpoofLabel": { "message": "網址偽裝" },
+  "evidenceBrandSpoofDetail": { "message": "子網域夾帶「$1」,但本站網域與 $2 官方（$3）無關" },
+  "lookupStatusBrandSpoof": { "message": "⚠️ 網址疑似假冒 $1（官方網域:$2）— 請特別小心" },
+  "popupStatusBrandSpoof": { "message": "⚠️ 網址疑似假冒 $1（官方網域:$2）,請特別小心" },
+  "brandSpoofListLabel": { "message": "內建品牌清單:" },
+
   "markSafeBtn": { "message": "加入白名單" },
 
   "addDomainInvalid": { "message": "無法解析成網域（請輸入像 example.com 的網域,不接受 IP 或單一字詞）" },

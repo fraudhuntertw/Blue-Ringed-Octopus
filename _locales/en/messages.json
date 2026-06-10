@@ -250,6 +250,23 @@
   "oddReasonSep": { "message": " and " },
   "lookupStatusOddName": { "message": "⚠️ Odd domain (long or hyphenated main domain — caution)" },
 
+  "tagBrandSpoof": { "message": "Brand spoofing" },
+  "brandSpoofHeading": { "message": "Detect brand-spoofing subdomains" },
+  "brandSpoofHint": { "message": "When a subdomain contains a well-known brand name but the actual registrable domain has nothing to do with that brand (e.g. paypal.com.evil.xyz — the real site is evil.xyz), an orange reminder banner is shown at the top of the page. This is the most common trick phishing sites use to make a URL \"look official\". Roughly 40 frequently-impersonated brands are built in (Taiwanese banks / shopping / utilities / telecom plus major global sites). Matching is purely local — no extra data is sent — and there is no overlay option. On by default." },
+  "brandSpoofLabel": { "message": "Enable brand-spoofing subdomain detection" },
+  "brandSpoofSub": { "message": "Matches show an orange reminder banner (reminder level, dismissible). Only whole subdomain labels are compared, and a brand's own domains are never flagged; generic-word brands (LINE, Apple…) additionally require a domain-mimicry context such as \".com / .tw\" to reduce false positives." },
+  "brandSpoofEnabled": { "message": "Enabled (reminds when a subdomain carries a brand name)" },
+  "brandSpoofDisabled": { "message": "Disabled" },
+  "brandSpoofFlagSaved": { "message": "Saved \"Detect brand-spoofing subdomains\" ($1) — applies on next visit" },
+  "contentWarnBrandSpoof": { "message": "Warning: this page's address contains \"$2\", but the actual site is $1 — not an official $3 site (the official domain is $4). Scammers often disguise fake sites this way. Do not enter credentials, card numbers, or make payments." },
+  "overlayTitleBrandSpoof": { "message": "Warning: address may impersonate a brand" },
+  "explainBrandSpoof": { "message": "Legitimate sites never hide their brand name inside someone else's subdomain — this is almost certainly an impersonated address. Leave this page; to use the service, open the official app or type the official URL yourself, and don't click any links on this page." },
+  "evidenceBrandSpoofLabel": { "message": "Address disguise" },
+  "evidenceBrandSpoofDetail": { "message": "The subdomain carries \"$1\", but this site's domain is unrelated to $2's official domain ($3)" },
+  "lookupStatusBrandSpoof": { "message": "⚠️ Address may impersonate $1 (official domain: $2) — be very careful" },
+  "popupStatusBrandSpoof": { "message": "⚠️ Address may impersonate $1 (official domain: $2) — be very careful" },
+  "brandSpoofListLabel": { "message": "Built-in brand list:" },
+
   "markSafeBtn": { "message": "Add to whitelist" },
 
   "addDomainInvalid": { "message": "Couldn't parse this as a domain (enter something like example.com — IP addresses or single words are not accepted)" },

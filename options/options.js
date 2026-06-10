@@ -499,6 +499,47 @@ async function saveOddNameFlag() {
 
 $("odd-name-detect").addEventListener("change", saveOddNameFlag);
 
+// === 偵測子網域品牌偽裝（提醒級橫幅,預設開）===
+
+function setBrandSpoofInfo(text, status /* "saved" | "error" | null */) {
+  const el = $("brand-spoof-info");
+  el.textContent = text;
+  el.className = "settings-info";
+  if (status === "saved") el.classList.add("is-saved");
+  if (status === "error") el.classList.add("is-error");
+}
+
+async function loadBrandSpoofToggle() {
+  const resp = await sendMessage({ type: "GET_DETECT_BRAND_SPOOF" });
+  // 此設定預設「開」:讀取失敗（resp 無 value）時不可硬轉 false,否則畫面顯示
+  // 與實際生效值相反。
+  const on = resp && typeof resp.value === "boolean" ? resp.value : true;
+  $("brand-spoof-detect").checked = on;
+  setBrandSpoofInfo(on ? t("brandSpoofEnabled") : t("brandSpoofDisabled"), null);
+}
+
+// 內建品牌清單（透明度:讓使用者能稽核到底比對哪些品牌）。清單是內建常數,載入一次即可。
+async function loadBrandList() {
+  const resp = await sendMessage({ type: "GET_BRAND_LIST" });
+  const list = (resp && resp.list) || [];
+  if (list.length === 0) return;
+  $("brand-list").textContent =
+    t("brandSpoofListLabel") + " " + list.map(b => `${b.brand}（${b.official}）`).join("、");
+}
+
+async function saveBrandSpoofFlag() {
+  const value = $("brand-spoof-detect").checked;
+  const resp = await sendMessage({ type: "SET_DETECT_BRAND_SPOOF", value });
+  if (resp && resp.ok) {
+    setBrandSpoofInfo(t("brandSpoofFlagSaved", t(value ? "labelOn" : "labelOff")), "saved");
+  } else {
+    setBrandSpoofInfo(t("saveFailed", (resp && resp.error) || t("unknownError")), "error");
+    $("brand-spoof-detect").checked = !value; // 回滾畫面狀態
+  }
+}
+
+$("brand-spoof-detect").addEventListener("change", saveBrandSpoofFlag);
+
 // === 快取 ===
 
 async function refreshCacheCount() {
@@ -557,7 +598,7 @@ async function doExport() {
   const btn = $("backup-export");
   btn.disabled = true;
   try {
-    const [wl, bl, tldDetail, threshold, overlay, lock, oddName] = await Promise.all([
+    const [wl, bl, tldDetail, threshold, overlay, lock, oddName, brandSpoof] = await Promise.all([
       sendMessage({ type: "GET_WHITELIST" }),
       sendMessage({ type: "GET_BLACKLIST" }),
       sendMessage({ type: "GET_HIGH_RISK_TLDS_DETAIL" }),
@@ -565,6 +606,7 @@ async function doExport() {
       sendMessage({ type: "GET_OVERLAY_FLAGS" }),
       sendMessage({ type: "GET_LOCK_FLAGS" }),
       sendMessage({ type: "GET_DETECT_ODD_NAME" }),
+      sendMessage({ type: "GET_DETECT_BRAND_SPOOF" }),
     ]);
     const whitelist = (wl && wl.list) || [];
     const blacklist = (bl && bl.list) || [];
@@ -587,6 +629,9 @@ async function doExport() {
       lockBlacklist: !!(lock && lock.flags && lock.flags.blacklist),
       lockYoung: !!(lock && lock.flags && lock.flags.young),
       detectOddName: !!(oddName && oddName.value),
+      // 預設「開」的設定:讀取失敗時匯出 true（預設值）,不可硬轉 false,
+      // 否則備份→還原會把別台機器的預設開靜默關掉。
+      detectBrandSpoof: brandSpoof && typeof brandSpoof.value === "boolean" ? brandSpoof.value : true,
       ui_locale: getCurrentLocale(),
     };
 
@@ -675,6 +720,9 @@ async function applyImport(parsed, includeSettings) {
     if (typeof parsed.detectOddName === "boolean") {
       await sendMessage({ type: "SET_DETECT_ODD_NAME", value: parsed.detectOddName });
     }
+    if (typeof parsed.detectBrandSpoof === "boolean") {
+      await sendMessage({ type: "SET_DETECT_BRAND_SPOOF", value: parsed.detectBrandSpoof });
+    }
     if (typeof parsed.ui_locale === "string" && SUPPORTED_LOCALES.includes(parsed.ui_locale)) {
       await setPreferredLocale(parsed.ui_locale);
     }
@@ -716,6 +764,7 @@ async function doImport(file) {
       typeof parsed.lockBlacklist === "boolean" ||
       typeof parsed.lockYoung === "boolean" ||
       typeof parsed.detectOddName === "boolean" ||
+      typeof parsed.detectBrandSpoof === "boolean" ||
       typeof parsed.ui_locale === "string"
     );
 
@@ -734,6 +783,7 @@ async function doImport(file) {
       await loadOverlayToggles();
       await loadLockToggles();
       await loadOddNameToggle();
+      await loadBrandSpoofToggle();
       // 語言可能變了,簡單重整頁面即可套用
       if (typeof parsed.ui_locale === "string" && parsed.ui_locale !== getCurrentLocale()) {
         location.reload();
@@ -777,4 +827,6 @@ $("backup-file").addEventListener("change", (e) => {
   loadOverlayToggles();
   loadLockToggles();
   loadOddNameToggle();
+  loadBrandSpoofToggle();
+  loadBrandList();
 })();

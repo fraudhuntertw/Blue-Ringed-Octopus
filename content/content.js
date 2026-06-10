@@ -35,7 +35,7 @@
 
   // 提醒級（橘色）告警：橘色樣式 + 關閉後本分頁同 domain 記憶不再彈。
   // young / blacklist 屬告警級（紅色）,重新整理會再次出現,不在此列。
-  const REMINDER_REASONS = new Set(["high_risk_tld", "odd_name"]);
+  const REMINDER_REASONS = new Set(["high_risk_tld", "odd_name", "brand_subdomain"]);
   const isReminder = (payload) => !!(payload && REMINDER_REASONS.has(payload.reason));
 
   const dismissKey = (reason, domain) => `bro-dismiss:${reason}:${domain}`;

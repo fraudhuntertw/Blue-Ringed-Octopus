@@ -202,6 +202,7 @@ async function renderStatus() {
   if (resp.highRiskTld)       tags.push({ cls: "tag-tld",       label: t("tagHighRiskTld") });
   if (resp.highRiskRegistrar) tags.push({ cls: "tag-registrar", label: t("tagHighRiskRegistrar") });
   if (resp.oddName)           tags.push({ cls: "tag-odd",       label: t("tagOddName") });
+  if (resp.brandSpoof)        tags.push({ cls: "tag-brand",     label: t("tagBrandSpoof") });
   if (resp.blacklisted)       tags.push({ cls: "tag-bl",        label: t("tagBlacklist") });
   if (resp.whitelisted)       tags.push({ cls: "tag-wl",        label: t("tagWhitelist") });
   renderTags(tags);
@@ -228,8 +229,16 @@ async function renderStatus() {
     return;
   }
 
+  // 品牌偽裝:狀態列不可顯示綠色/中性訊息（與下方深橘「品牌偽裝」標籤同框矛盾,
+  // 長輩以顏色判讀,綠色 = 強烈安心訊號）。除「短註冊」紅色警示仍優先外,
+  // 一律改為點名品牌與官方網域的橘色警示。
+  const showBrandStatus = resp.brandSpoof
+    ? () => setStatus(t("popupStatusBrandSpoof", resp.brandSpoofBrand, resp.brandSpoofOfficial), "is-warning")
+    : null;
+
   if (resp.state === "not_queried") {
-    setStatus(t("statusNotQueried"), "is-muted");
+    if (showBrandStatus) showBrandStatus();
+    else setStatus(t("statusNotQueried"), "is-muted");
     hideDetails();
     updateActionButtons(resp);
     return;
@@ -240,15 +249,19 @@ async function renderStatus() {
   if (r.status === "ok") {
     if (typeof r.ageDays === "number" && r.ageDays < threshold) {
       setStatus(t("statusYoung", r.ageDays, threshold), "is-warning");
+    } else if (showBrandStatus) {
+      showBrandStatus();
     } else {
       setStatus(t("statusOk", threshold), "is-safe");
     }
     showDetails(r, resp.highRiskRegistrar);
   } else if (r.status === "unsupported") {
-    setStatus(t("statusUnsupported", r.reason || ""), "is-muted");
+    if (showBrandStatus) showBrandStatus();
+    else setStatus(t("statusUnsupported", r.reason || ""), "is-muted");
     hideDetails();
   } else {
-    setStatus(t("statusError", r.reason || t("unknownError")), "is-muted");
+    if (showBrandStatus) showBrandStatus();
+    else setStatus(t("statusError", r.reason || t("unknownError")), "is-muted");
     hideDetails();
   }
   updateActionButtons(resp);
@@ -389,6 +402,9 @@ function lookupStatusOf(verdict) {
       return { text: t("lookupStatusHighRiskRegistrar"), cls: "is-warn" };
     case "odd_name":
       return { text: t("lookupStatusOddName"), cls: "is-warn" };
+    case "brand_subdomain":
+      // 點名品牌與官方網域 —— 「是哪個品牌、正確網址是什麼」才是可行動資訊。
+      return { text: t("lookupStatusBrandSpoof", verdict.brandSpoofBrand, verdict.brandSpoofOfficial), cls: "is-warn" };
     case "ok":
       return { text: t("statusOk", threshold), cls: "is-safe" };
     case "unsupported":
@@ -406,6 +422,7 @@ function lookupTags(verdict) {
   if (verdict.highRiskTld)       tags.push({ cls: "tag-tld",       label: t("tagHighRiskTld") });
   if (verdict.highRiskRegistrar) tags.push({ cls: "tag-registrar", label: t("tagHighRiskRegistrar") });
   if (verdict.oddName)           tags.push({ cls: "tag-odd",       label: t("tagOddName") });
+  if (verdict.brandSpoof)        tags.push({ cls: "tag-brand",     label: t("tagBrandSpoof") });
   if (verdict.blacklisted)       tags.push({ cls: "tag-bl",        label: t("tagBlacklist") });
   if (verdict.whitelisted)       tags.push({ cls: "tag-wl",        label: t("tagWhitelist") });
   return tags;
