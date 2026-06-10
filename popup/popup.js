@@ -263,6 +263,14 @@ function showLockNote(kind /* "blacklist" | "young" */) {
   lockNote.hidden = false;
 }
 
+// RDAP 失敗導致鎖定守門無法確認時的提示（fail-closed：暫不放行洗白）。
+function showLockNoteIndeterminate() {
+  const lockNote = $("lock-note");
+  if (!lockNote) return;
+  lockNote.textContent = `🔒 ${t("popupLockedNoteIndeterminate")}`;
+  lockNote.hidden = false;
+}
+
 function hideLockNote() {
   const lockNote = $("lock-note");
   if (lockNote) lockNote.hidden = true;
@@ -317,6 +325,11 @@ function handleLockedResponse(resp, btnId) {
   if (resp && resp.ok === false && resp.reason === "locked") {
     showLockNote(resp.lockKind === "young" ? "young" : "blacklist");
     $(btnId).disabled = true;
+    return true;
+  }
+  // RDAP 失敗、無法確認是否仍受鎖定：fail-closed,不停用按鈕（可稍後重試）。
+  if (resp && resp.ok === false && resp.reason === "lock_indeterminate") {
+    showLockNoteIndeterminate();
     return true;
   }
   return false;

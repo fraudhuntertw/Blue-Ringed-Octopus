@@ -169,16 +169,35 @@
     btn.type = "button";
     btn.className = "zm-marksafe";
     btn.textContent = s.markSafeLabel;
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", (e) => {
+      // 防護:本橫幅注入在「頁面 DOM」內,惡意網頁能用 el.click() 合成點擊觸發此
+      // listener,把自己悄悄加進白名單從此不再被告警。只接受真實使用者點擊。
+      if (!e.isTrusted) {
+        console.warn("[BRO] mark-safe ignored: synthetic click");
+        return;
+      }
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        if (typeof onDone === "function") onDone();
+      };
       try {
         chrome.runtime.sendMessage(
           { type: "MARK_FALSE_POSITIVE", domain: payload.domain },
-          () => { void chrome.runtime.lastError; }
+          (resp) => {
+            void chrome.runtime.lastError;
+            // 被鎖定守門擋下（locked / lock_indeterminate）或寫入失敗（明確回 ok:false）
+            // 時 → 保留告警,不給「已標記安全」的假象。無回應（resp undefined,如 SW
+            // 中途被終止）視同無法溝通:白名單並未寫入、下次導航仍會告警,保守移除即可。
+            if (resp && resp.ok === false) return;
+            finish();
+          }
         );
       } catch (err) {
-        // background 未回應也直接移除告警,避免使用者卡住
+        // background 完全無法溝通（極少見）：保守仍移除,避免使用者卡在告警頁。
+        finish();
       }
-      if (typeof onDone === "function") onDone();
     });
     return btn;
   }
@@ -254,8 +273,12 @@
       const actions = document.createElement("div");
       actions.className = "zm-overlay-actions";
       const safeBtn = buildMarkSafeBtn(payload, s, () => {
-        const el = document.getElementById(OVERLAY_ID);
-        if (el) el.remove();
+        // 標記安全成功 = 該域已加白名單。young/blacklist 蓋版時頂端橫幅同時存在,
+        // 兩者都要移除,避免殘留「已標安全卻仍掛風險告警」的矛盾畫面。
+        for (const id of [OVERLAY_ID, BANNER_ID]) {
+          const el = document.getElementById(id);
+          if (el) el.remove();
+        }
       });
       if (safeBtn) {
         safeBtn.classList.add("zm-overlay-marksafe");
@@ -352,8 +375,11 @@
       banner.appendChild(buildLockedNote(s));
     } else {
       const safeBtn = buildMarkSafeBtn(payload, s, () => {
-        const el = document.getElementById(BANNER_ID);
-        if (el) el.remove();
+        // 同蓋版路徑:標記安全成功時,蓋版與橫幅（可能並存）一併移除。
+        for (const id of [OVERLAY_ID, BANNER_ID]) {
+          const el = document.getElementById(id);
+          if (el) el.remove();
+        }
       });
       if (safeBtn) {
         const actRow = document.createElement("div");
@@ -370,6 +396,16 @@
     if (!msg || msg.type !== "SHOW_WARNING") return;
     try {
       const payload = msg.payload;
+      // 防 race:慢 RDAP 期間,若本分頁已在同一 tabId 導航到別的網站,checkTab 在
+      // 舊 URL 觸發的告警可能被送到新 document 的 content script,把告警打在無關頁面。
+      // payload.domain 是 eTLD+1,比對當前 host 後綴不符就丟棄。
+      if (payload && payload.domain) {
+        const h = (location.hostname || "").toLowerCase().replace(/\.$/, "");
+        if (h !== payload.domain && !h.endsWith("." + payload.domain)) {
+          console.info("[BRO] warning dropped (host mismatch):", h, "vs", payload.domain);
+          return;
+        }
+      }
       if (payload && payload.overlay) {
         injectOverlay(payload);
         // blacklist / young 屬高風險：蓋版被關掉後仍要有頂端橫幅持續提示。

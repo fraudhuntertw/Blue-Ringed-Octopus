@@ -250,5 +250,10 @@
   "oddReasonSep": { "message": " and " },
   "lookupStatusOddName": { "message": "⚠️ Odd domain (long or hyphenated main domain — caution)" },
 
-  "markSafeBtn": { "message": "Add to whitelist" }
+  "markSafeBtn": { "message": "Add to whitelist" },
+
+  "addDomainInvalid": { "message": "Couldn't parse this as a domain (enter something like example.com — IP addresses or single words are not accepted)" },
+  "backupErrJsonParse": { "message": "JSON parse error" },
+  "backupErrNotBackup": { "message": "not a BRO backup file" },
+  "popupLockedNoteIndeterminate": { "message": "Can't confirm this domain's registration date right now (RDAP lookup failed). For safety, whitelisting is blocked while locked — try again later, or unlock from the options page." }
 }

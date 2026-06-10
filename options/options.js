@@ -76,7 +76,15 @@ async function wireAddInput(inputId, btnId, msgType) {
     const input = $(inputId);
     const v = input.value.trim();
     if (!v) return;
-    await sendMessage({ type: msgType, domain: v });
+    const resp = await sendMessage({ type: msgType, domain: v });
+    // 名單存入會化約成 eTLD+1;IP / 單段 host / 無法解析 → background 回 invalid,
+    // 顯示錯誤而非默默吞掉（否則使用者以為加好了,實際永遠比對不到）。
+    if (resp && resp.ok === false) {
+      input.setCustomValidity(t("addDomainInvalid"));
+      input.reportValidity();
+      return;
+    }
+    input.setCustomValidity("");
     input.value = "";
     await refreshLists();
   }
@@ -87,6 +95,7 @@ async function wireAddInput(inputId, btnId, msgType) {
       doAdd();
     }
   });
+  $(inputId).addEventListener("input", () => $(inputId).setCustomValidity(""));
 }
 
 wireAddInput("wl-input", "wl-add", "ADD_WHITELIST");
@@ -150,11 +159,13 @@ async function doBatchAddBlacklist() {
   let added = 0;
   let dup = 0;
   let fail = 0;
+  const failedDomains = [];
   for (let i = 0; i < domains.length; i++) {
     const d = domains[i];
     const resp = await sendMessage({ type: "ADD_BLACKLIST", domain: d });
     if (!resp || resp.ok === false) {
       fail++;
+      failedDomains.push(d);
     } else if (resp.alreadyExists) {
       dup++;
     } else {
@@ -167,13 +178,14 @@ async function doBatchAddBlacklist() {
 
   await refreshLists();
   btn.disabled = false;
-  ta.value = "";
+  // 有失敗項目時保留在輸入框供使用者修正後重試,並用紅色錯誤樣式提示;否則清空。
+  ta.value = failedDomains.join("\n");
 
   const parts = [t("batchAdded", added)];
   if (dup > 0) parts.push(t("batchDuplicate", dup));
   if (fail > 0) parts.push(t("batchFailed", fail));
   info.textContent = parts.join(" / ");
-  info.className = "settings-info is-saved";
+  info.className = fail > 0 ? "settings-info is-error" : "settings-info is-saved";
 }
 
 $("bl-batch-add").addEventListener("click", doBatchAddBlacklist);
@@ -607,20 +619,24 @@ function readFileAsText(file) {
 }
 
 async function applyImport(parsed, includeSettings) {
-  let wlAdded = 0, blAdded = 0, tldAdded = 0;
+  let wlAdded = 0, blAdded = 0, tldAdded = 0, rejected = 0;
 
   if (Array.isArray(parsed.whitelist)) {
     for (const d of parsed.whitelist) {
       if (typeof d !== "string") continue;
       const resp = await sendMessage({ type: "ADD_WHITELIST", domain: d });
-      if (resp && resp.ok && !resp.alreadyExists) wlAdded++;
+      // 舊版備份可能含 IP / 單段 host 等如今會被拒絕的項目（存入時改化約成 eTLD+1）
+      // —— 計數回報而非靜默丟棄,與單筆新增 / 批次匯入的失敗回饋同口徑。
+      if (!resp || resp.ok === false) rejected++;
+      else if (!resp.alreadyExists) wlAdded++;
     }
   }
   if (Array.isArray(parsed.blacklist)) {
     for (const d of parsed.blacklist) {
       if (typeof d !== "string") continue;
       const resp = await sendMessage({ type: "ADD_BLACKLIST", domain: d });
-      if (resp && resp.ok && !resp.alreadyExists) blAdded++;
+      if (!resp || resp.ok === false) rejected++;
+      else if (!resp.alreadyExists) blAdded++;
     }
   }
   if (Array.isArray(parsed.userHighRiskTldsAdd)) {
@@ -664,7 +680,7 @@ async function applyImport(parsed, includeSettings) {
     }
   }
 
-  return { wlAdded, blAdded, tldAdded };
+  return { wlAdded, blAdded, tldAdded, rejected };
 }
 
 async function doImport(file) {
@@ -678,11 +694,11 @@ async function doImport(file) {
     try {
       parsed = JSON.parse(text);
     } catch (err) {
-      setBackupInfo(t("backupImportInvalid", "JSON parse error"), "error");
+      setBackupInfo(t("backupImportInvalid", t("backupErrJsonParse")), "error");
       return;
     }
     if (!parsed || typeof parsed !== "object" || parsed.bro !== BACKUP_FORMAT_TAG) {
-      setBackupInfo(t("backupImportInvalid", "not a BRO backup file"), "error");
+      setBackupInfo(t("backupImportInvalid", t("backupErrNotBackup")), "error");
       return;
     }
 
@@ -708,7 +724,7 @@ async function doImport(file) {
       return;
     }
 
-    const { wlAdded, blAdded, tldAdded } = await applyImport(parsed, includeSettings);
+    const { wlAdded, blAdded, tldAdded, rejected } = await applyImport(parsed, includeSettings);
 
     // 重整 UI
     await refreshLists();
@@ -725,7 +741,12 @@ async function doImport(file) {
       }
     }
 
-    setBackupInfo(t("backupImportOk", wlAdded, blAdded, tldAdded), "saved");
+    const okMsg = t("backupImportOk", wlAdded, blAdded, tldAdded);
+    if (rejected > 0) {
+      setBackupInfo(`${okMsg} / ${t("batchFailed", rejected)}`, "error");
+    } else {
+      setBackupInfo(okMsg, "saved");
+    }
   } catch (err) {
     setBackupInfo(t("backupImportInvalid", String(err && err.message || err)), "error");
   } finally {

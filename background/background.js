@@ -244,11 +244,13 @@ function badgeForVerdict(verdict) {
     // 越年輕分數越高:剛註冊 ≈95,接近門檻 ≈70
     return { text: String(Math.round(95 - frac * 25)), bg: "#c0392b" };
   }
-  if (verdict.classification === "odd_name") {
+  if (verdict.classification === "odd_name" && !verdict.highRiskTld && !verdict.highRiskRegistrar) {
     // 奇怪域名:提醒級、純結構啟發式,風險分數刻意低於高風險 TLD / registrar。
-    // 只在「純 odd_name 分類」時給 30；若同時命中高風險 registrar,classification
-    // 仍是 high_risk_registrar（warnReason 才是 odd_name）,會落到下方 warn 分支拿
-    // 較高的 40,避免「多開一個可疑訊號反而把分數調降」的矛盾。
+    // 只在「純 odd_name」(未同時命中高風險 TLD / registrar)時給 30。
+    // 若同時命中高風險 TLD / registrar,則 fall through 到下方 warn 分支拿較高的
+    // 55 / 40,避免「多偵測到一個可疑訊號反而把風險分數調降」的矛盾 —— 這在
+    // 「高風險 TLD + RDAP 失敗 + 奇怪域名」情境尤其重要(maybeFlagOddName 會把
+    // classification 從 unsupported/error 改寫成 odd_name)。
     return { text: "30", bg: "#d97706" };
   }
   if (verdict.iconState === "warn") {
@@ -260,17 +262,22 @@ function badgeForVerdict(verdict) {
 
 function updateBadge(tabId, verdict) {
   const b = badgeForVerdict(verdict);
+  // chrome.action.setBadge* 回 Promise;tab 已關閉時是「非同步 reject」,try/catch
+  // 攔不到(會變成 unhandled rejection)。對每個呼叫接 .catch 才能確實吞掉。
+  // 部分舊版可能回 undefined,故先檢查 .catch 是否存在。
+  const warn = err => console.warn(`[BRO] setBadge failed tab=${tabId}:`, err);
+  const safe = p => { if (p && typeof p.catch === "function") p.catch(warn); };
   try {
-    chrome.action.setBadgeText({ tabId, text: b ? b.text : "" });
+    safe(chrome.action.setBadgeText({ tabId, text: b ? b.text : "" }));
     if (b) {
-      chrome.action.setBadgeBackgroundColor({ tabId, color: b.bg });
+      safe(chrome.action.setBadgeBackgroundColor({ tabId, color: b.bg }));
       // setBadgeTextColor 在較舊 Chrome 可能不存在
       if (chrome.action.setBadgeTextColor) {
-        chrome.action.setBadgeTextColor({ tabId, color: "#ffffff" });
+        safe(chrome.action.setBadgeTextColor({ tabId, color: "#ffffff" }));
       }
     }
   } catch (err) {
-    console.warn(`[BRO] setBadge failed tab=${tabId}:`, err);
+    warn(err);
   }
 }
 
@@ -392,9 +399,15 @@ async function evaluateDomain(domain, { allowFetch = true } = {}) {
   v.highRiskRegistrar = isHighRiskRegistrar(registrarName);
 
   if (!result || result.status !== "ok" || typeof result.ageDays !== "number") {
-    // RDAP 拿不到（unsupported / error / 未查）時,仍可用本地高風險 TLD 清單做判斷
-    v.classification = result ? result.status : "not_queried";
+    // RDAP 拿不到（unsupported / error / 未查）時,仍可用本地高風險 TLD 清單做判斷。
+    // 高風險 TLD 是純本地查表（isHighRiskTld 不依賴 RDAP）,因此不該被 RDAP 失敗連坐:
+    // .tk / .ga / .cf / .gq 等 Freenom 系 TLD 幾乎都不支援 RDAP（必走此分支）,
+    // 若這裡不彈橫幅,README 點名要提醒的這些 TLD 反而永遠只剩一個工具列 icon,
+    // 與功能初衷（提醒不熟悉的長輩）矛盾。故此處對高風險 TLD 也送橘色提醒橫幅。
+    // 註:RDAP 年齡型「紅色告警」仍維持 fail-open（不誤殺），此處只補「橘色提醒」。
+    v.classification = v.highRiskTld ? "high_risk_tld" : (result ? result.status : "not_queried");
     v.iconState = v.highRiskTld ? "warn" : "normal";
+    if (v.highRiskTld) v.warnReason = "high_risk_tld";
     return maybeFlagOddName(v);
   }
 
@@ -482,15 +495,17 @@ async function checkTab(tabId, url) {
   } else if (verdict.warnReason === "high_risk_tld") {
     console.info(`[BRO]  → orange warn (high-risk TLD)`);
     const overlay = await getOverlayHighRiskTld();
+    // result 可能為 null（RDAP unsupported/error 時仍對高風險 TLD 彈橫幅）—— 全部 null-safe。
+    const r = verdict.result;
     sendWarning(tabId, {
       domain,
       reason: "high_risk_tld",
       tld: domain.split(".").pop(),
-      ageDays: verdict.result.ageDays,
-      registrationDate: verdict.result.registrationDate,
-      registrarName: verdict.result.registrar ? verdict.result.registrar.name : null,
+      ageDays: r ? r.ageDays : null,
+      registrationDate: r ? r.registrationDate : null,
+      registrarName: r && r.registrar ? r.registrar.name : null,
       highRiskRegistrar: verdict.highRiskRegistrar,
-      registrantRedacted: verdict.result.status === "ok" && !verdict.result.registrant,
+      registrantRedacted: !!(r && r.status === "ok" && !r.registrant),
       overlay,
     });
   } else if (verdict.warnReason === "odd_name") {
@@ -594,15 +609,33 @@ async function handleCheckDomain(rawInput) {
  * 因此這裡在「確實有開鎖定」時允許補抓一次 RDAP（allowFetch:true）取得權威分類。
  * 這條路徑是低頻、使用者主動觸發,補抓一次 RDAP 可接受。
  *
+ * fail-closed:lockYoung 開啟時,若這次拿不到權威的 RDAP「ok」結論
+ * （unsupported / error / 未查）, 就不能斷定「已非 young」而放行洗白 —— 否則
+ * RDAP 暫時失靈（逾時 / 429 / cache 過期）即可繞過鎖定。此時回 "indeterminate"
+ * 讓上層擋下,由 popup 提示「目前無法確認,請稍後再試或從選項頁解除」。
+ *
  * @param {string} domain
- * @returns {Promise<null | "blacklist" | "young">} 命中鎖定的原因,未鎖定回 null
+ * @returns {Promise<null | "blacklist" | "young" | "indeterminate">} 命中鎖定的原因,未鎖定回 null
  */
 async function lockedReasonFor(domain) {
   const [lockBl, lockYoung] = await Promise.all([getLockBlacklist(), getLockYoung()]);
   if (!lockBl && !lockYoung) return null;
   const v = await evaluateDomain(domain, { allowFetch: true });
+  // 鎖定守門用到的 RDAP 查詢也計入節流統計（與 checkTab / handleCheckDomain 同口徑）。
+  if (v.fetched) incRdapFetch();
+  else if (v.cacheHit) incCacheHit();
+  else if (v.blacklisted || v.whitelisted || v.trustedTld) incSkipByList();
+
   if (lockBl && v.classification === "blacklist") return "blacklist";
-  if (lockYoung && v.classification === "young") return "young";
+  if (lockYoung) {
+    if (v.classification === "young") return "young";
+    // blacklist / whitelist / trusted 是 RDAP 之前就確定的分類,與 young 無關,不鎖。
+    const settled = ["blacklist", "whitelist", "trusted"].includes(v.classification);
+    // 是否取得權威的 RDAP ok 結論（能據以斷定「已非 young」）。不看 classification,
+    // 因為 maybeFlagOddName 會把 unsupported/error 改寫成 odd_name —— 改看原始 result。
+    const authoritative = !!(v.result && v.result.status === "ok" && typeof v.result.ageDays === "number");
+    if (!settled && !authoritative) return "indeterminate";
+  }
   return null;
 }
 
@@ -614,7 +647,7 @@ async function handleMarkFalsePositive(domain, sender) {
   const lockKind = await lockedReasonFor(domain);
   if (lockKind) {
     console.info(`[BRO] MARK_FALSE_POSITIVE blocked (${lockKind} locked): ${domain}`);
-    return { ok: false, reason: "locked", lockKind };
+    return { ok: false, reason: lockKind === "indeterminate" ? "lock_indeterminate" : "locked", lockKind };
   }
   console.info(`[BRO] MARK_FALSE_POSITIVE → whitelist ${domain}`);
   return addToWhitelist(domain);
@@ -634,7 +667,7 @@ async function handleGuardedMutation(type, domain) {
   const lockKind = await lockedReasonFor(domain);
   if (lockKind) {
     console.info(`[BRO] ${type} blocked (${lockKind} locked): ${domain}`);
-    return { ok: false, reason: "locked", lockKind };
+    return { ok: false, reason: lockKind === "indeterminate" ? "lock_indeterminate" : "locked", lockKind };
   }
   return type === "ADD_WHITELIST" ? addToWhitelist(domain) : removeFromBlacklist(domain);
 }

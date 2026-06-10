@@ -89,8 +89,24 @@ if ($IncludeReadme) {
 }
 
 # ---- 壓縮 ----
+# 不用 Compress-Archive：Windows PowerShell 5.1（.NET Framework 後端）會把 zip entry
+# 路徑用反斜線「\」分隔,Chrome / Web Store 解壓時無法辨識子目錄而整包壞掉。
+# 改用 System.IO.Compression 手動逐檔建 entry,強制以「/」分隔,5.1 與 pwsh 7 皆正確。
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-Compress-Archive -Path (Join-Path $stageDir '*') -DestinationPath $zipPath -CompressionLevel Optimal
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+# ZipArchiveMode / CompressionLevel 型別在 .NET Framework 位於 System.IO.Compression.dll,
+# 5.1 不會隨 FileSystem.dll 連帶載入,少這行會直接噴 Unable to find type。
+Add-Type -AssemblyName System.IO.Compression
+$zip = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+    Get-ChildItem -Path $stageDir -Recurse -File | ForEach-Object {
+        $entryName = $_.FullName.Substring($stageDir.Length).TrimStart('\', '/').Replace('\', '/')
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+            $zip, $_.FullName, $entryName, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
+    }
+} finally {
+    $zip.Dispose()
+}
 
 # ---- 清單與大小回報 ----
 $files = Get-ChildItem -Path $stageDir -Recurse -File

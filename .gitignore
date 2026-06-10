@@ -12,6 +12,8 @@ private/
 # 規格書 / 開發筆記（包含原始 prompt 與內部決策，不公開）
 BRO.md
 todo.md
+# 新功能評估清單 / bug 修復紀錄（內部評估用，不公開）
+plan.md
 
 # 打包產物
 dist/

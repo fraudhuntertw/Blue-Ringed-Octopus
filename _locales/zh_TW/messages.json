@@ -3,7 +3,7 @@
     "message": "Blue Ringed Octopus"
   },
   "extDescription": {
-    "message": "藍環章魚 可偵測網域註冊時間、可疑 TLD 與註冊商。⚠️ 隱私:每個你造訪的網域(eTLD+1)會送至 rdap.org 查詢註冊資料,安裝前請先讀 README。"
+    "message": "藍環章魚 可偵測網域註冊時間、可疑 TLD 與註冊商。⚠️ 隱私:每個你造訪的網域（eTLD+1）會送至 rdap.org 查詢註冊資料,安裝前請先讀 README。"
   },
 
   "btnAdd": { "message": "加入" },
@@ -61,10 +61,10 @@
   "optionsSubtitle": { "message": "名單管理、告警門檻、內建清單檢視" },
 
   "backupHeading": { "message": "備份 / 匯入" },
-  "backupHint": { "message": "把名單與設定下載成 JSON 檔,或從備份檔還原。匯入時名單採取「合併」(已存在的項目保留)。" },
+  "backupHint": { "message": "把名單與設定下載成 JSON 檔,或從備份檔還原。匯入時名單採取「合併」（已存在的項目保留）。" },
   "btnExport": { "message": "匯出設定" },
   "btnImport": { "message": "匯入設定" },
-  "backupImportSettings": { "message": "同時匯入設定值(門檻、蓋版、偵測、語言)" },
+  "backupImportSettings": { "message": "同時匯入設定值（門檻、蓋版、偵測、語言）" },
   "backupExportOk": { "message": "已匯出 $1 筆名單" },
   "backupExportFailed": { "message": "匯出失敗:$1" },
   "backupParsing": { "message": "解析中…" },
@@ -201,7 +201,7 @@
   "popupLockedNote": { "message": "此網域已被鎖定，只能到選項頁調整名單。" },
   "popupLockedNoteYoung": { "message": "此網域已被鎖定，只能到選項頁調整名單（短註冊網域亦會在滿門檻天數後自動放行）。" },
 
-  "lookupToggle": { "message": "🔎 查其他網址（免造訪)" },
+  "lookupToggle": { "message": "🔎 查其他網址（免造訪）" },
   "lookupHint": { "message": "把可疑的 LINE / 簡訊連結貼進來,先看風險訊號,再決定要不要點。" },
   "lookupPlaceholder": { "message": "貼上網址或網域,如 example.com" },
   "lookupBtn": { "message": "查詢" },
@@ -211,19 +211,19 @@
   "lookupSkipped": { "message": "這是本機 / 內部位址,不檢查。" },
   "lookupShortener": { "message": "⚠️ 這是短網址。BRO 只查得到短網址服務本身,看不到它最終會把你導去哪裡 — 請特別小心,不要在不確定目的地的情況下輸入帳密或付款。" },
   "lookupDisclaimer": { "message": "此結果只代表「目前可見的風險訊號」,不是詐騙與否的判定;沒有警示不代表安全。" },
-  "lookupStatusHighRiskTld": { "message": "⚠️ 高風險 TLD（請留意)" },
-  "lookupStatusHighRiskRegistrar": { "message": "⚠️ 高風險註冊商（請留意)" },
+  "lookupStatusHighRiskTld": { "message": "⚠️ 高風險 TLD（請留意）" },
+  "lookupStatusHighRiskRegistrar": { "message": "⚠️ 高風險註冊商（請留意）" },
 
   "evidenceToggle": { "message": "為何被標記?" },
   "evidenceWhatToDo": { "message": "建議:" },
   "evidenceAgeLabel": { "message": "註冊時間" },
-  "evidenceAgeDetail": { "message": "至今僅 $1 天（註冊於 $2)" },
+  "evidenceAgeDetail": { "message": "至今僅 $1 天（註冊於 $2）" },
   "evidenceTldLabel": { "message": "頂級網域" },
   "evidenceTldDetail": { "message": "$1 常被詐騙集團大量註冊濫用" },
   "evidenceRegistrarLabel": { "message": "註冊商" },
   "evidenceRegistrarDetail": { "message": "$1 — 被釣魚濫用比例偏高" },
   "evidenceRedactedLabel": { "message": "註冊人資料" },
-  "evidenceRedactedDetail": { "message": "被刻意隱藏（WHOIS 遮罩),正規商業網站較少這樣" },
+  "evidenceRedactedDetail": { "message": "被刻意隱藏（WHOIS 遮罩）,正規商業網站較少這樣" },
   "evidenceListLabel": { "message": "名單" },
   "evidenceBlacklistDetail": { "message": "你先前把這個網域加入黑名單" },
   "explainYoung": { "message": "正牌銀行 / 金流 / 購物網站不會用這麼新的網域。不要在此輸入帳密或刷卡;若是從連結點進來的,直接關掉,改用官方 App 或自行輸入官網網址。" },
@@ -248,7 +248,12 @@
   "oddReasonHyphen": { "message": "含連字號「-」" },
   "oddReasonGeneric": { "message": "拼法可疑" },
   "oddReasonSep": { "message": "且" },
-  "lookupStatusOddName": { "message": "⚠️ 奇怪域名（主域名過長或含連字號,請留意)" },
+  "lookupStatusOddName": { "message": "⚠️ 奇怪域名（主域名過長或含連字號,請留意）" },
 
-  "markSafeBtn": { "message": "加入白名單" }
+  "markSafeBtn": { "message": "加入白名單" },
+
+  "addDomainInvalid": { "message": "無法解析成網域（請輸入像 example.com 的網域,不接受 IP 或單一字詞）" },
+  "backupErrJsonParse": { "message": "JSON 格式錯誤" },
+  "backupErrNotBackup": { "message": "不是 BRO 備份檔" },
+  "popupLockedNoteIndeterminate": { "message": "目前無法確認此網域的註冊時間（RDAP 查詢失敗）。基於安全,鎖定狀態下暫不放行加入白名單,請稍後再試,或到選項頁解除。" }
 }
