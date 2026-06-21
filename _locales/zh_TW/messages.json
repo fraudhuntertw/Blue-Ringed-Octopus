@@ -3,7 +3,7 @@
     "message": "Blue Ringed Octopus"
   },
   "extDescription": {
-    "message": "藍環章魚 可偵測網域註冊時間、可疑 TLD 與註冊商。⚠️ 隱私:每個你造訪的網域（eTLD+1）會送至 rdap.org 查詢註冊資料,安裝前請先讀 README。"
+    "message": "藍環章魚 可偵測網域註冊時間、可疑 TLD 與註冊商。⚠️ 隱私:每個你造訪的網域（eTLD+1）會送至 rdap.org 查詢註冊資料,安裝前可先讀 Github README。"
   },
 
   "btnAdd": { "message": "加入" },
